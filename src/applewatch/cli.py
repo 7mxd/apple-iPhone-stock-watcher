@@ -47,6 +47,11 @@ def _report_broken(state_path: Path, topic: str | None, now, message: str) -> No
         try:
             send_text(topic, "Stock checker is broken", message, 2)
         except Exception as error:
+            # Broad on purpose: guarantees the ntfy topic can never reach
+            # stdout/stderr from this call site, at the cost of collapsing
+            # any programming error here to a bare type name. notify.py
+            # already sanitizes real ntfy failures into NotifyError before
+            # they get here; this is belt-and-braces, not the primary fix.
             print(
                 f"ntfy POST failed ({type(error).__name__}); health alert not "
                 f"delivered",
@@ -115,18 +120,31 @@ def main(argv=None) -> int:
         from .models import Event
 
         part_number, store_number = sorted(matches)[0]
-        send(
-            topic,
-            Event(
-                kind="in_stock",
-                sku=catalog[part_number],
-                store=stores[store_number],
-                quote="Test alert, no real stock",
-                pickup_display="available",
-                priority=5,
-                watches=("--force-notify",),
-            ),
-        )
+        try:
+            send(
+                topic,
+                Event(
+                    kind="in_stock",
+                    sku=catalog[part_number],
+                    store=stores[store_number],
+                    quote="Test alert, no real stock",
+                    pickup_display="available",
+                    priority=5,
+                    watches=("--force-notify",),
+                ),
+            )
+        except Exception as error:
+            # Broad on purpose: guarantees the ntfy topic can never reach
+            # stdout/stderr from this call site, at the cost of collapsing
+            # any programming error here to a bare type name. notify.py
+            # already sanitizes real ntfy failures into NotifyError before
+            # they get here; this is belt-and-braces, not the primary fix.
+            print(
+                f"ntfy POST failed ({type(error).__name__}); test alert not "
+                f"delivered",
+                file=sys.stderr,
+            )
+            return 1
         print("sent one test alert")
         return 0
 
@@ -181,9 +199,12 @@ def main(argv=None) -> int:
             try:
                 send(topic, event)
             except Exception as error:
-                # Never let a raw requests exception reach stdout/stderr: it
-                # embeds the full "https://ntfy.sh/<topic>" URL, and this
-                # repo's Actions logs are public.
+                # Broad on purpose: guarantees the ntfy topic can never
+                # reach stdout/stderr from this call site, at the cost of
+                # collapsing any programming error here to a bare type
+                # name. notify.py already sanitizes real ntfy failures
+                # into NotifyError before they get here; this is
+                # belt-and-braces, not the primary fix.
                 print(
                     f"ntfy POST failed ({type(error).__name__}); alert not "
                     f"delivered",

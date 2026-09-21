@@ -1,3 +1,5 @@
+import pytest
+
 from applewatch.catalog import load_catalog
 from applewatch.models import Event
 from applewatch.notify import render
@@ -76,3 +78,35 @@ def test_send_text_posts_a_bare_message(monkeypatch):
     assert captured["url"].endswith("/topic-abc")
     assert captured["headers"]["Priority"] == "2"
     assert b"simulated outage" in captured["data"]
+
+
+def test_send_failure_raises_notify_error_without_the_topic():
+    """send() must sanitize ntfy failures at the source.
+
+    requests' raise_for_status() embeds the full request URL, including the
+    topic, in its exception text. Any call site that lets that propagate
+    unwrapped would leak the project's only secret into a log. Fixing this
+    inside send() itself means no call site -- current or future -- has to
+    remember to wrap it.
+    """
+    import requests
+
+    from applewatch.notify import NotifyError, send
+
+    topic = "super-secret-topic-xyz"
+
+    class FakeSession:
+        def post(self, url, data, headers, timeout):
+            class FakeResponse:
+                def raise_for_status(self):
+                    raise requests.HTTPError(
+                        f"403 Client Error: Forbidden for url: https://ntfy.sh/{topic}"
+                    )
+
+            return FakeResponse()
+
+    with pytest.raises(NotifyError) as excinfo:
+        send(topic, event("in_stock", 5), session=FakeSession())
+
+    assert topic not in str(excinfo.value)
+    assert "ntfy.sh" not in str(excinfo.value)

@@ -264,3 +264,77 @@ def test_successful_run_clears_health(monkeypatch, sent, health_alerts, tmp_path
 
     after = json.loads(state_path.read_text(encoding="utf-8"))
     assert "_health" not in after
+
+
+# --- Fix round 2 -------------------------------------------------------
+#
+# A re-reviewer reproduced two of the fix-round-1 findings by probe rather
+# than by reading the diff: a third, unwrapped ntfy call site at
+# --force-notify, and a rate-limit test that only exercised the
+# suppress-at-t=0 case. See the task-8 fix report for the full writeup.
+
+
+def test_force_notify_failure_does_not_leak_topic(monkeypatch, sent, tmp_path, capsys):
+    """The --force-notify send call is a third ntfy call site.
+
+    It was the one left unwrapped by fix round 1: probing it directly
+    (monkeypatching cli.send to raise a raw, URL-bearing HTTPError, exactly
+    like a real ntfy failure would before notify.py sanitized it) proved
+    the topic still reached stdout/stderr through this path.
+    """
+    import requests
+
+    sentinel = "SUPER-SECRET-TOPIC-123"
+    monkeypatch.setenv("NTFY_TOPIC", sentinel)
+
+    def boom_send(topic, event, session=None):
+        raise requests.HTTPError(
+            f"403 Client Error: Forbidden for url: https://ntfy.sh/{sentinel}"
+        )
+
+    monkeypatch.setattr(cli, "send", boom_send)
+
+    cli.main(["--force-notify", "--state", str(tmp_path / "state.json")])
+
+    captured = capsys.readouterr()
+    assert sentinel not in captured.out
+    assert sentinel not in captured.err
+
+
+def test_health_alert_suppressed_ten_minutes_after_previous(
+    monkeypatch, sent, health_alerts, tmp_path
+):
+    """A short backdate must stay suppressed -- the discriminating case.
+
+    An inflating units bug (dividing by 60 instead of 3600) makes `due`
+    MORE often true, so neither a 7-hours-ago backdate (fires again, as
+    expected either way) nor a near-zero-elapsed case proves the division
+    is correct. Ten minutes is small enough that only the correct /3600
+    computes an elapsed_hours under the 6-hour threshold; an accidental
+    /60 would compute 10 (minutes-as-hours) and fire here too.
+
+    Verified to actually catch the bug it targets: temporarily changing
+    cli.py's `/ 3600` to `/ 60` makes this test fail (health_alerts grows
+    to 1), confirming it is not a vacuously-passing test. See the fix
+    report for the transcript.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    state_path = tmp_path / "state.json"
+    ten_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=10)
+    state_path.write_text(
+        json.dumps(
+            {
+                "_health": {
+                    "last_error_notified": ten_minutes_ago.isoformat(),
+                    "last_error": "old",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    break_apple(monkeypatch)
+    cli.main(["--state", str(state_path)])
+
+    assert len(health_alerts) == 0
