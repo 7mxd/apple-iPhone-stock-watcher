@@ -181,13 +181,11 @@ watches:
     cities: [Abu Dhabi]
     priority: urgent
 
-  # Uncomment to include Al Jimi Mall (Al Ain, Abu Dhabi emirate, 133 km):
-  # - name: "Burgundy 512 Pro Max, whole Abu Dhabi emirate"
-  #   screen: 6_9inch
-  #   capacity: [512gb]
-  #   color: [burgundy]
+  # To also cover Al Jimi Mall (Al Ain, Abu Dhabi emirate, 133 km), replace the
+  # cities line above with:
   #   emirates: [Abu Dhabi]
-  #   priority: urgent
+  # Replace rather than add. The two selectors are mutually exclusive within a
+  # watch, and adding a second overlapping watch alerts on the same stores twice.
 ```
 
 ### 5.2 Field reference
@@ -199,11 +197,15 @@ watches:
 | `screen` | string | any size | `dimensionScreensize` |
 | `capacity` | list | any capacity | `dimensionCapacity` |
 | `color` | list | any color | `dimensionColor` |
-| `stores` | list | no store constraint | `storeNumber` or exact `storeName` |
-| `cities` | list | no city constraint | API `city` field, literal |
-| `emirates` | list | no emirate constraint | our `stores.yml` mapping |
-| `max_distance_km` | number | no distance constraint | `storedistance` |
+| `stores` | list | see note below | `storeNumber` or exact `storeName` |
+| `cities` | list | see note below | API `city` field, literal |
+| `emirates` | list | see note below | our `stores.yml` mapping |
 | `priority` | enum | `urgent` | ntfy tier of this watch's in-stock alert |
+
+**`stores`, `cities` and `emirates` are mutually exclusive.** A watch picks exactly one
+way to say where it is looking. Supplying two of them is a configuration error that
+fails loudly at load time with a message naming both keys, rather than being silently
+resolved. Supplying none watches every UAE store.
 
 `priority` accepts `urgent` (ntfy 5), `high` (4), `default` (3) or `low` (2). It sets the
 tier of the **in-stock** alert only. Reminder and gone-again alerts are fixed at 3 and 2
@@ -217,16 +219,19 @@ These rules are stated explicitly because the Al Jimi case proved they are not o
 1. **Product fields AND together.** `capacity: [512gb]` plus `color: [burgundy]` matches
    only 512GB burgundy.
 2. **Values within one field OR together.** `color: [burgundy, black]` matches either.
-3. **Store selectors OR across each other.** `stores`, `cities` and `emirates` all answer
-   the same question ("which stores?"), so a store matches if it satisfies *any* of them.
-   Specifying `cities: [Abu Dhabi]` and `emirates: [Abu Dhabi]` in one rule yields all
-   three emirate stores, not the intersection.
-4. **`max_distance_km` is a constraint, not a selector, so it ANDs.** It trims whatever
-   the selectors produced. `emirates: [Abu Dhabi]` with `max_distance_km: 25` gives
-   R706 and R595 but excludes Al Jimi Mall at 133 km. Used alone, it selects purely by
-   distance.
-5. **An omitted field is not a constraint**, it is a wildcard.
-6. A watch with no location filter at all watches every UAE store.
+3. **A watch picks exactly one way to say where.** `stores`, `cities` and `emirates` all
+   answer the same question, so combining them is a config error, not an OR. This is the
+   Al Jimi lesson made structural: the three selectors have deliberately different
+   reaches, and the user chooses which reach they mean.
+
+   | Selector | Resolves to | Includes Al Jimi Mall? |
+   |---|---|---|
+   | `cities: [Abu Dhabi]` | R706, R595 | No. Al Jimi's city is `Al Ain`. |
+   | `emirates: [Abu Dhabi]` | R706, R595, R785 | Yes. Al Ain is in the Abu Dhabi emirate. |
+   | `stores: [R706, Yas Mall]` | exactly those | Only if listed. |
+
+4. **An omitted field is not a constraint**, it is a wildcard.
+5. A watch with no location selector at all watches every UAE store.
 
 ### 5.4 `stores.yml` and `catalog.json`
 
@@ -258,6 +263,11 @@ Event table:
 | hit sustained, `reminder_minutes` elapsed | 3 (default) | `Still in stock at Yas Mall (47 min)` |
 | hit to not-hit | 2 (low) | `Gone from Yas Mall after 52 min` |
 | unknown `pickupDisplay` value | 4 | `Unexpected state "<value>" at Yas Mall`, treated as a hit |
+
+State is keyed by `sku|storeNumber`, not by watch, so overlapping watches cannot produce
+duplicate alerts for the same phone in the same shop. When several watches match one
+`sku|storeNumber`, a single event fires carrying the highest priority among them and
+naming the matching watches.
 
 Committing state serves three purposes beyond deduplication: it survives the ephemeral
 Actions container, it produces a timestamped restock history useful for learning when
@@ -368,11 +378,15 @@ The README is a deliverable, not an afterthought. It must contain:
 7. A plain statement that this reads a public availability endpoint at human refresh
    rates and does not automate purchasing.
 
-## 13. Open decisions
+## 13. Resolved decisions
 
-1. **Al Jimi Mall in the shipped default.** Current default watches R706 and R595 only,
-   with the emirate-wide variant commented in `watches.yml`. The owner's approval message
-   was truncated before this was confirmed. Flipping it is a one-line change.
+1. **Al Jimi Mall is out of the shipped default.** Resolved 2026-09-21. The default watch
+   uses `cities: [Abu Dhabi]`, which is R706 and R595. Al Ain is reachable by swapping
+   that one line for `emirates: [Abu Dhabi]`.
+2. **Location selectors are mutually exclusive** rather than OR'd, and `max_distance_km`
+   is dropped entirely. Resolved 2026-09-21. With five stores nationwide, city, emirate
+   and explicit store lists express every realistic intent, and a fourth overlapping
+   mechanism would only reintroduce ambiguity.
 
 ## 14. Risks
 
