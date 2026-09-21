@@ -26,6 +26,13 @@ def _report_broken(state_path: Path, topic: str | None, now, message: str) -> No
     Silence from a broken checker is indistinguishable from silence from an
     empty shelf, which is the failure this whole project is built to avoid.
     Preserves existing state: only the _health entry is touched.
+
+    The rate-limit timestamp is written *before* the send is attempted, and
+    the send itself can never raise past this function. Otherwise a slow or
+    failing ntfy POST would both (a) defeat the 6-hour rate limit, since the
+    timestamp would never be recorded, and (b) leak the ntfy topic: requests
+    embeds the full "https://ntfy.sh/<topic>" URL in its exception text, and
+    this repo's Actions logs are public.
     """
     state = load_state(state_path)
     health = state.get("_health", {})
@@ -36,8 +43,15 @@ def _report_broken(state_path: Path, topic: str | None, now, message: str) -> No
         due = elapsed_hours >= HEALTH_ALERT_INTERVAL_HOURS
 
     if due and topic:
-        send_text(topic, "Stock checker is broken", message, 2)
         health["last_error_notified"] = now.isoformat()
+        try:
+            send_text(topic, "Stock checker is broken", message, 2)
+        except Exception as error:
+            print(
+                f"ntfy POST failed ({type(error).__name__}); health alert not "
+                f"delivered",
+                file=sys.stderr,
+            )
 
     health["last_error"] = message
     state["_health"] = health
@@ -63,6 +77,15 @@ def parse_args(argv):
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+
+    if args.dry_run and args.force_notify:
+        print(
+            "--dry-run and --force-notify are mutually exclusive: dry-run "
+            "promises nothing is sent, force-notify exists only to send "
+            "something real.",
+            file=sys.stderr,
+        )
+        return 2
 
     catalog = load_catalog(DEFAULT_CATALOG_PATH)
     stores = load_stores()
@@ -120,25 +143,53 @@ def main(argv=None) -> int:
     reported = {(o.part_number, o.store_number) for o in observations}
     missing = sorted(key for key in matches if key not in reported)
     if missing:
+        if len(missing) == len(matches):
+            # Every watched pair vanished at once. That is what a rotated
+            # part number or a broken response shape looks like, not what
+            # "in stock nowhere" looks like, so it is treated as a broken
+            # checker rather than a quiet, permanent absence of stock.
+            message = (
+                f"Apple did not report any of the {len(matches)} watched "
+                f"pair(s); part numbers may have rotated. Run "
+                f"scripts/refresh_catalog.py."
+            )
+            print(f"apple request failed: {message}", file=sys.stderr)
+            if not args.dry_run:
+                _report_broken(Path(args.state), topic, now, message)
+            return 1
         print(
             f"WARNING: Apple did not report {len(missing)} watched pair(s): {missing}. "
             f"Part numbers may have rotated; run scripts/refresh_catalog.py.",
             file=sys.stderr,
         )
 
+    # A fetch that reached this point recovered (or was never broken), so any
+    # stale _health entry from an earlier failure is deliberately dropped
+    # rather than carried forward: an outage a few hours after a recovery
+    # must be able to alert again immediately, not stay rate-limited by an
+    # unrelated failure that has already been resolved.
     previous = load_state(Path(args.state))
     events, state = diff(
         matches, observations, previous, now, config.reminder_minutes, catalog, stores
     )
-    if "_health" in previous:
-        state["_health"] = previous["_health"]
 
     for event in events:
         title, body, _ = render(event)
         if args.dry_run:
             print(f"[would send] {title}\n{body}\n")
         else:
-            send(topic, event)
+            try:
+                send(topic, event)
+            except Exception as error:
+                # Never let a raw requests exception reach stdout/stderr: it
+                # embeds the full "https://ntfy.sh/<topic>" URL, and this
+                # repo's Actions logs are public.
+                print(
+                    f"ntfy POST failed ({type(error).__name__}); alert not "
+                    f"delivered",
+                    file=sys.stderr,
+                )
+                return 1
             print(f"sent: {title}")
 
     if not events:
