@@ -374,6 +374,69 @@ def test_unexpected_exception_message_is_not_written_to_state(
     assert json.loads(after)["_health"]["last_error"] == "RuntimeError"
 
 
+def test_malformed_health_timestamp_does_not_crash_handler(
+    monkeypatch, sent, health_alerts, tmp_path, capsys
+):
+    """An unparseable last_error_notified must not crash _report_broken.
+
+    _report_broken runs inside main()'s blanket exception handler in the
+    failure case that matters most. If datetime.fromisoformat(last) were
+    left unguarded, an unparseable stored value would raise from inside the
+    handler that exists specifically to keep exception text out of the
+    public state.json and Actions log: Python's chained-exception output
+    would print the ORIGINAL error's message straight to stderr, with no
+    health alert and no clean return code.
+    """
+    state_path = tmp_path / "state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "_health": {
+                    "last_error_notified": "not-a-timestamp",
+                    "last_error": "old",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    break_apple(monkeypatch)
+
+    code = cli.main(["--state", str(state_path)])
+
+    assert code != 0
+    assert len(health_alerts) == 1
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    assert "During handling of the above exception" not in captured.err
+
+
+def test_naive_health_timestamp_does_not_crash_handler(
+    monkeypatch, sent, health_alerts, tmp_path, capsys
+):
+    """A naive stored timestamp compared against the aware `now` raises
+    TypeError, not ValueError -- both must be caught."""
+    state_path = tmp_path / "state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "_health": {
+                    "last_error_notified": "2026-09-21T08:00:00",
+                    "last_error": "old",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    break_apple(monkeypatch)
+
+    code = cli.main(["--state", str(state_path)])
+
+    assert code != 0
+    assert len(health_alerts) == 1
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+
+
 def test_heartbeat_written_once_per_day(monkeypatch, sent, tmp_path):
     """The heartbeat must be a once-daily marker, not a once-per-run one.
 

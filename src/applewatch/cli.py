@@ -64,8 +64,23 @@ def _report_broken(state_path: Path, topic: str | None, now, message: str) -> No
     last = health.get("last_error_notified")
     due = True
     if last:
-        elapsed_hours = (now - datetime.fromisoformat(last)).total_seconds() / 3600
-        due = elapsed_hours >= HEALTH_ALERT_INTERVAL_HOURS
+        try:
+            elapsed_hours = (
+                now - datetime.fromisoformat(last)
+            ).total_seconds() / 3600
+            due = elapsed_hours >= HEALTH_ALERT_INTERVAL_HOURS
+        except (ValueError, TypeError):
+            # An unparseable string (ValueError) or a naive timestamp
+            # compared against the aware `now` (TypeError) must not raise
+            # from inside this function, which is itself already running
+            # inside main()'s blanket exception handler in the failure
+            # case that matters most. An uncaught exception here would
+            # escape as a chained traceback carrying the *original*
+            # error's message straight to stderr and the public Actions
+            # log, which is exactly what routing only the type name
+            # through _report_broken exists to prevent. Fail toward
+            # alerting, never toward silence.
+            due = True
 
     if due and topic:
         health["last_error_notified"] = now.isoformat()
@@ -296,6 +311,10 @@ def main(argv=None) -> int:
         # could contain anything, including this project's only secret.
         # Exception, never BaseException, so Ctrl-C and SystemExit (e.g.
         # from argparse or sys.exit elsewhere) still propagate normally.
+        # The type name is already sent to ntfy and written to state.json,
+        # so printing it here too costs nothing in secret terms, and it is
+        # the only hint the Actions log gets that something broke.
+        print(f"unexpected failure ({type(error).__name__})", file=sys.stderr)
         if not args.dry_run:
             _report_broken(
                 Path(args.state), topic, datetime.now(DUBAI), type(error).__name__
