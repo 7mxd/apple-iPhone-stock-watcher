@@ -1,0 +1,28 @@
+# Apple Store locations in the UAE.
+#
+# `emirate` is maintained here because Apple's pickup-message payload returns
+# an empty `state` field for every UAE store. `city` must match Apple's string
+# byte-for-byte because city filters compare against it literally.
+#
+# Verified against the live endpoint on 2026-09-21.
+stores:
+  - number: R706
+    name: Al Maryah Island
+    city: Abu Dhabi
+    emirate: Abu Dhabi
+  - number: R595
+    name: Yas Mall
+    city: Abu Dhabi
+    emirate: Abu Dhabi
+  - number: R596
+    name: Mall of the Emirates
+    city: Dubai
+    emirate: Dubai
+  - number: R597
+    name: Dubai Mall
+    city: Dubai
+    emirate: Dubai
+  - number: R785
+    name: Al Jimi Mall
+    city: Al Ain
+    emirate: Abu Dhabi
