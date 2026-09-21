@@ -34,6 +34,7 @@ def test_first_sighting_emits_in_stock_at_watch_priority():
     assert events[0].sku.label == "iPhone 18 Pro Max 512GB Burgundy"
     assert events[0].store.name == "Yas Mall"
     assert state[f"{TARGET}|R595"]["status"] == "hit"
+    assert state[f"{TARGET}|R595"]["last_notified"] == NOW.isoformat()
 
 
 def test_unexpected_positive_state_still_alerts_at_full_priority():
@@ -104,3 +105,27 @@ def test_highest_priority_among_overlapping_watches_wins():
     events, _ = diff(matches, observed("available"), {}, NOW, 30, CATALOG, STORES)
     assert events[0].priority == 5
     assert events[0].watches == ("quiet", "loud")
+
+
+def test_omitted_pair_carries_previous_state_forward():
+    """Apple omits a watched pair (rotated part number): carry previous state untouched."""
+    state_key = f"{TARGET}|R595"
+    previous = {
+        state_key: {
+            "status": "hit",
+            "since": (NOW - timedelta(minutes=10)).isoformat(),
+            "last_notified": (NOW - timedelta(minutes=10)).isoformat(),
+        }
+    }
+    events, state = diff(MATCHES, [], previous, NOW, 30, CATALOG, STORES)
+    assert events == []
+    assert state_key in state
+    assert state[state_key] == previous[state_key]
+
+
+def test_omitted_pair_with_no_previous_state_is_simply_skipped():
+    """Apple omits a watched pair with no prior state: skip it."""
+    state_key = f"{TARGET}|R595"
+    events, state = diff(MATCHES, [], {}, NOW, 30, CATALOG, STORES)
+    assert events == []
+    assert state_key not in state
