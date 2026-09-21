@@ -1,11 +1,14 @@
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+import requests
 
 from applewatch.apple import (
     AppleError,
     build_params,
+    fetch_availability,
     parse_pickup_response,
 )
 
@@ -68,3 +71,75 @@ def test_non_200_body_status_raises():
 def test_missing_stores_key_raises():
     with pytest.raises(AppleError):
         parse_pickup_response({"head": {"status": "200"}, "body": {}})
+
+
+def test_fetch_availability_retries_on_transient_failure(monkeypatch):
+    """Transient failure on first attempt, success on second."""
+    monkeypatch.setattr("applewatch.apple.time.sleep", lambda s: None)
+
+    call_count = 0
+
+    def get_mock(url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise requests.RequestException("Transient network error")
+        # Second call succeeds
+        response = Mock()
+        response.raise_for_status = Mock()
+        response.json = Mock(return_value=fixture("pickup_unavailable"))
+        return response
+
+    session = Mock()
+    session.get = get_mock
+
+    result = fetch_availability(["MJXC4AH/A"], "Abu Dhabi", session=session)
+
+    assert call_count == 2
+    assert len(result) > 0  # Got valid response
+    assert all(not o.is_hit for o in result)
+
+
+def test_fetch_availability_raises_after_exhausting_retries(monkeypatch):
+    """All attempts fail, should raise AppleError."""
+    monkeypatch.setattr("applewatch.apple.time.sleep", lambda s: None)
+
+    call_count = 0
+
+    def get_mock(url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        raise requests.RequestException("Network error")
+
+    session = Mock()
+    session.get = get_mock
+
+    with pytest.raises(AppleError) as exc_info:
+        fetch_availability(["MJXC4AH/A"], "Abu Dhabi", session=session)
+
+    assert call_count == 3  # MAX_ATTEMPTS
+    assert "failed after 3 attempts" in str(exc_info.value)
+
+
+def test_fetch_availability_raises_on_bad_status_after_retries(monkeypatch):
+    """Response with non-200 body status on every attempt raises AppleError."""
+    monkeypatch.setattr("applewatch.apple.time.sleep", lambda s: None)
+
+    call_count = 0
+
+    def get_mock(url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        response = Mock()
+        response.raise_for_status = Mock()
+        response.json = Mock(return_value={"head": {"status": "500"}, "body": {}})
+        return response
+
+    session = Mock()
+    session.get = get_mock
+
+    with pytest.raises(AppleError) as exc_info:
+        fetch_availability(["MJXC4AH/A"], "Abu Dhabi", session=session)
+
+    assert call_count == 3  # MAX_ATTEMPTS
+    assert "failed after 3 attempts" in str(exc_info.value)
