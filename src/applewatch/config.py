@@ -129,12 +129,27 @@ def load_config(
 
     watches = [_build_watch(entry, catalog, stores, errors) for entry in entries]
 
+    # 0 or negative makes the reminder fire on every run, and a non-numeric
+    # value raises an uncaught ValueError deep inside diff(); both must be
+    # caught here, at load time, alongside every other config typo.
+    reminder_minutes_raw = raw.get("reminder_minutes", 30)
+    reminder_minutes = 30
+    try:
+        reminder_minutes = int(reminder_minutes_raw)
+        if reminder_minutes < 1:
+            raise ValueError
+    except (TypeError, ValueError):
+        errors.append(
+            f"reminder_minutes: {reminder_minutes_raw!r} must be an integer "
+            f">= 1"
+        )
+
     if errors:
         raise ConfigError("\n".join(errors))
 
     return Config(
         ntfy_topic_env=raw.get("ntfy_topic_env", "NTFY_TOPIC"),
         poll_location=raw.get("poll_location", "Abu Dhabi"),
-        reminder_minutes=int(raw.get("reminder_minutes", 30)),
+        reminder_minutes=reminder_minutes,
         watches=tuple(w for w in watches if w is not None),
     )

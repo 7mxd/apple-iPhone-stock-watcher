@@ -301,6 +301,115 @@ def test_force_notify_failure_does_not_leak_topic(monkeypatch, sent, tmp_path, c
     assert sentinel not in captured.err
 
 
+def test_partial_missing_pair_alerts_and_exits_nonzero(
+    monkeypatch, sent, health_alerts, tmp_path
+):
+    """A partial miss must not stay silent, only a total miss used to alert.
+
+    Scenario from the review: the owner widens to two colours, Apple
+    rotates only one part number, and the actual target goes permanently
+    unwatched with a stderr-only warning and a green (exit 0) run. Any
+    missing watched pair -- not just every one of them -- must route
+    through the same rate-limited health alert.
+    """
+    from applewatch.models import Availability
+
+    # The default watches.yml resolves to two pairs: (MJXC4AH/A, R706) and
+    # (MJXC4AH/A, R595). Report only one of them.
+    monkeypatch.setattr(
+        cli,
+        "fetch_availability",
+        lambda parts, location: [Availability("MJXC4AH/A", "R706", "unavailable", "")],
+    )
+
+    code = cli.main(["--state", str(tmp_path / "state.json")])
+
+    assert code != 0
+    assert len(health_alerts) == 1
+
+
+def test_corrupt_state_file_alerts_and_exits_nonzero(
+    monkeypatch, sent, health_alerts, tmp_path
+):
+    """Any unexpected exception, not just ConfigError/AppleError, must
+    route through the health alert rather than escape main() as a bare
+    traceback the owner may not be watching CI for.
+
+    A corrupt state.json (JSONDecodeError from load_state) is one of the
+    concretely reachable cases: a broken commit, a manual edit gone wrong,
+    or a race with a concurrent Actions run.
+    """
+    state_path = tmp_path / "state.json"
+    state_path.write_text("{not valid json", encoding="utf-8")
+    stub_apple(monkeypatch, "pickup_unavailable")
+
+    code = cli.main(["--state", str(state_path)])
+
+    assert code != 0
+    assert len(health_alerts) == 1
+    after = json.loads(state_path.read_text(encoding="utf-8"))
+    assert after["_health"]["last_error"] == "JSONDecodeError"
+
+
+def test_unexpected_exception_message_is_not_written_to_state(
+    monkeypatch, sent, tmp_path
+):
+    """_report_broken must receive only the exception's type name, never
+    str(error): an arbitrary exception message could contain anything, and
+    it is written into the public state.json as last_error.
+    """
+
+    def boom_diff(*args, **kwargs):
+        raise RuntimeError("super-secret-topic-abc-should-not-leak")
+
+    monkeypatch.setattr(cli, "diff", boom_diff)
+    stub_apple(monkeypatch, "pickup_unavailable")
+
+    state_path = tmp_path / "state.json"
+    code = cli.main(["--state", str(state_path)])
+
+    assert code != 0
+    after = state_path.read_text(encoding="utf-8")
+    assert "super-secret-topic-abc-should-not-leak" not in after
+    assert json.loads(after)["_health"]["last_error"] == "RuntimeError"
+
+
+def test_heartbeat_written_once_per_day(monkeypatch, sent, tmp_path):
+    """The heartbeat must be a once-daily marker, not a once-per-run one.
+
+    diff() rebuilds the state dict from scratch every call, so writing
+    _heartbeat unconditionally means ~288 commits/day and makes the
+    workflow's "no state change" branch dead code.
+    """
+    state_path = tmp_path / "state.json"
+    stub_apple(monkeypatch, "pickup_unavailable")
+
+    cli.main(["--state", str(state_path)])
+    first = json.loads(state_path.read_text(encoding="utf-8"))["_heartbeat"]
+
+    cli.main(["--state", str(state_path)])
+    second = json.loads(state_path.read_text(encoding="utf-8"))["_heartbeat"]
+
+    assert second == first
+
+
+def test_heartbeat_updates_on_a_later_date(monkeypatch, sent, tmp_path):
+    """A heartbeat from an earlier date must be refreshed, not carried
+    forward forever."""
+    state_path = tmp_path / "state.json"
+    stub_apple(monkeypatch, "pickup_unavailable")
+
+    stale_heartbeat = "2020-01-01T00:00:00+04:00"
+    state_path.write_text(
+        json.dumps({"_heartbeat": stale_heartbeat}), encoding="utf-8"
+    )
+
+    cli.main(["--state", str(state_path)])
+
+    updated = json.loads(state_path.read_text(encoding="utf-8"))["_heartbeat"]
+    assert updated != stale_heartbeat
+
+
 def test_health_alert_suppressed_ten_minutes_after_previous(
     monkeypatch, sent, health_alerts, tmp_path
 ):

@@ -73,6 +73,63 @@ def test_missing_stores_key_raises():
         parse_pickup_response({"head": {"status": "200"}, "body": {}})
 
 
+def test_missing_pickup_display_key_raises():
+    """An absent pickupDisplay key must never be scored as a hit.
+
+    parts.get("pickupDisplay", "") would default to "", which is not in the
+    denylist and so reads as in stock. If Apple renamed the field, every
+    watched pair would fire an urgent false in-stock alert and lock state to
+    "hit" forever. A missing key is a response-shape change and must raise,
+    not silently default.
+    """
+    payload = {
+        "head": {"status": "200"},
+        "body": {
+            "stores": [
+                {
+                    "storeNumber": "R595",
+                    "partsAvailability": {
+                        TARGET: {"pickupSearchQuote": "Currently unavailable"}
+                    },
+                }
+            ]
+        },
+    }
+    with pytest.raises(AppleError) as exc:
+        parse_pickup_response(payload)
+    assert TARGET in str(exc.value)
+    assert "R595" in str(exc.value)
+
+
+def test_unrecognised_non_empty_value_is_still_a_hit():
+    """An unrecognised VALUE is still treated as stock, by design.
+
+    Only an absent key is untrustworthy (see the test above); a present but
+    unfamiliar value must keep counting as a hit so an unanticipated
+    positive string from Apple is never silently dropped.
+    """
+    payload = {
+        "head": {"status": "200"},
+        "body": {
+            "stores": [
+                {
+                    "storeNumber": "R595",
+                    "partsAvailability": {
+                        TARGET: {
+                            "pickupDisplay": "wibble",
+                            "pickupSearchQuote": "Some new state",
+                        }
+                    },
+                }
+            ]
+        },
+    }
+    observations = parse_pickup_response(payload)
+    assert len(observations) == 1
+    assert observations[0].is_hit is True
+    assert observations[0].pickup_display == "wibble"
+
+
 def test_fetch_availability_retries_on_transient_failure(monkeypatch):
     """Transient failure on first attempt, success on second."""
     monkeypatch.setattr("applewatch.apple.time.sleep", lambda s: None)

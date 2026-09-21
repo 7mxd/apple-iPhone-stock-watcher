@@ -80,6 +80,28 @@ def test_send_text_posts_a_bare_message(monkeypatch):
     assert b"simulated outage" in captured["data"]
 
 
+def test_send_posts_to_the_exact_topic_url_with_click_and_quote():
+    """send() had no coverage at all: a wrong URL would still return 200
+    and fail silently forever. Mirrors the existing send_text test.
+    """
+    captured = {}
+
+    class FakeSession:
+        def post(self, url, data, headers, timeout):
+            captured["url"] = url
+            captured["data"] = data
+            captured["headers"] = headers
+            return type("R", (), {"raise_for_status": lambda self: None})()
+
+    from applewatch.notify import send
+
+    send("topic-abc", event("in_stock", 5), session=FakeSession())
+
+    assert captured["url"] == "https://ntfy.sh/topic-abc"
+    assert captured["headers"]["Click"] == SKU.buy_url
+    assert b"Available Wed 23 Sep" in captured["data"]
+
+
 def test_send_failure_raises_notify_error_without_the_topic():
     """send() must sanitize ntfy failures at the source.
 

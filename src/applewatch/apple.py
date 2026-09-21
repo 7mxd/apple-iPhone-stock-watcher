@@ -44,11 +44,24 @@ def parse_pickup_response(payload: dict) -> list[Availability]:
     for store in stores:
         store_number = store.get("storeNumber")
         for part_number, parts in (store.get("partsAvailability") or {}).items():
+            if "pickupDisplay" not in parts:
+                # An absent key is a response-shape change, not an
+                # unrecognised value: parts.get(..., "") would score it as a
+                # hit ("" is not in the denylist), firing an urgent false
+                # in-stock alert for every watched pair and locking state to
+                # "hit" forever. An unrecognised non-empty VALUE is still
+                # legitimately treated as a hit, by design; only the missing
+                # key is untrustworthy. See spec 3.4.
+                raise AppleError(
+                    f"part {part_number!r} at store {store_number!r} has no "
+                    f"pickupDisplay key; Apple's response shape may have "
+                    f"changed"
+                )
             observations.append(
                 Availability(
                     part_number=part_number,
                     store_number=store_number,
-                    pickup_display=parts.get("pickupDisplay", ""),
+                    pickup_display=parts["pickupDisplay"],
                     quote=parts.get("pickupSearchQuote", ""),
                 )
             )

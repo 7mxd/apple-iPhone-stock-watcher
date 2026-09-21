@@ -25,6 +25,22 @@ from there by hand.
    [Configuring watches](#configuring-watches) below), and validate the
    change with `python -m applewatch --dry-run` (see
    [Validating a change](#validating-a-change)) before committing it.
+5. **Mandatory: verify delivery end to end, not just that the secret is
+   set.** ntfy silently auto-creates a topic the first time anything posts
+   to it, so a typo'd `NTFY_TOPIC` secret still returns success from ntfy,
+   every scheduled run still shows green in Actions, and you get permanent
+   silence with nothing anywhere telling you it is wrong. Prove the whole
+   path works, from this repo to your phone, using the exact topic value
+   you just set as the secret:
+   ```bash
+   export NTFY_TOPIC="<your-topic>"
+   python -m applewatch --force-notify
+   ```
+   This resolves your real `watches.yml` down to its first watched pair and
+   sends one real alert for it. You should feel your phone buzz within a
+   few seconds. If nothing arrives, recheck the topic spelling in both
+   places (the exported value and the repository secret) before trusting
+   any run to actually notify you.
 
 ## Configuring watches
 
@@ -202,7 +218,7 @@ Exit codes, for scripting or for reading a failed Actions run:
 | Code | Meaning |
 |---|---|
 | `0` | Ran to completion, whether or not anything changed. |
-| `1` | The request to Apple failed outright, or Apple's response stopped reporting *every single* watched pair (see [Troubleshooting](#troubleshooting)). Also used if a real ntfy delivery fails mid-run. |
+| `1` | The request to Apple failed outright, or Apple's response stopped reporting one or more watched pairs, partial miss or total (see [Troubleshooting](#troubleshooting)). Also used if a real ntfy delivery fails mid-run. |
 | `2` | Configuration error, `NTFY_TOPIC` not set, no watch matched any SKU or store, or `--dry-run` combined with `--force-notify`. |
 
 ## ntfy setup
@@ -258,14 +274,14 @@ Tapping any of these opens the phone's page on `apple.com/ae`.
 |---|---|---|
 | No alerts ever arrive, even when you know stock changed | iOS Focus is silencing ntfy | Check the Time Sensitive and sleep-Focus allowlist steps above, then confirm the pipe still works with `python -m applewatch --force-notify` (sends one real alert for the first watched pair and exits). |
 | Run refuses to start with `config error:` followed by `unknown color [...]` (or `model`/`store`/`city`/`emirate`/`priority`) | Typo in `watches.yml` | Every valid value is enumerated in the field table above; compare byte-for-byte, including case. |
-| `WARNING: Apple did not report N watched pair(s)` on stderr | Apple rotated one or more part numbers, or dropped a pair from the response; this is a partial miss, so the run still exits `0` | Run `python scripts/refresh_catalog.py` to regenerate `catalog.json`, `git diff catalog.json` to see what changed, then `--dry-run` to confirm the watch resolves to the new SKU. |
-| `apple request failed: Apple did not report any of the N watched pair(s)...` and exit code `1` | *Every* watched pair vanished at once, which is what a broken response or a fully rotated lineup looks like, not what "nobody has stock" looks like, so this is treated as a broken checker | Same fix as above; also triggers a "stock checker is broken" health alert. |
+| `apple request failed: Apple did not report N of M watched pair(s)...` and exit code `1` | Apple rotated one or more part numbers, or otherwise stopped reporting a watched pair. Any missing pair, partial or total, is what a rotated part number or a broken response shape looks like, not what "nobody has stock" looks like, so this is always treated as a broken checker, never as a quiet, permanent absence of stock | Run `python scripts/refresh_catalog.py` to regenerate `catalog.json`, `git diff catalog.json` to see what changed, then `--dry-run` to confirm the watch resolves to the new SKU. Note that state keys are part-number based, so if a pair was already in stock under the old part number, it will re-alert once after the rotation: the new part number starts with no history of its own. |
 | The scheduled workflow stopped running | GitHub disables a repository's scheduled workflows after 60 days with no commits | Re-enable it from the Actions tab, or push any commit. |
 | `ntfy POST failed (<SomeExceptionType>)` with no further detail, in stdout/stderr/Actions logs | Deliberate: ntfy failures are reported by exception type only, never by message. The underlying `requests` error embeds the full `https://ntfy.sh/<topic>` URL in its text, and this repository's Actions logs are public, so letting that string reach a log would leak the one secret this project has. | Don't go looking for more detail in the logs, there isn't any, by design. Confirm the topic still exists with `curl -d "test" ntfy.sh/<topic>`, and confirm `NTFY_TOPIC` is still set as a secret. |
 
-A repeat "stock checker is broken" health alert (for either of the two
-failure rows above) is itself rate-limited to once per 6 hours, so an
-extended outage sends one push, not one every five minutes.
+A repeat "stock checker is broken" health alert (for the missing-pair row
+above, or for any other unexpected failure inside a run) is itself
+rate-limited to once per 6 hours, so an extended outage sends one push, not
+one every five minutes.
 
 ## How it works
 

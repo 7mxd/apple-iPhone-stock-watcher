@@ -74,6 +74,22 @@ def test_unknown_key_is_an_error(tmp_path):
     assert "screen" in str(exc.value)
 
 
+def test_reminder_minutes_zero_is_an_error(tmp_path):
+    """0 would make the reminder fire on every single run."""
+    body = BASE.replace("reminder_minutes: 30", "reminder_minutes: 0")
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, body), CATALOG, STORES)
+    assert "reminder_minutes" in str(exc.value)
+
+
+def test_reminder_minutes_non_numeric_is_an_error(tmp_path):
+    """A non-numeric value used to raise an uncaught ValueError instead."""
+    body = BASE.replace("reminder_minutes: 30", "reminder_minutes: soon")
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, body), CATALOG, STORES)
+    assert "reminder_minutes" in str(exc.value)
+
+
 def test_no_location_selector_is_allowed(tmp_path):
     body = BASE.replace("    cities: [Abu Dhabi]\n", "")
     config = load_config(write(tmp_path, body), CATALOG, STORES)

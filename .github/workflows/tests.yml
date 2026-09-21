@@ -1,0 +1,24 @@
+name: tests
+
+# Deliberately separate from check.yml, which polls every 5 minutes and must
+# stay minimal. This workflow carries no secrets and never touches ntfy or
+# state.json: it only proves the 76+ tests in tests/ still pass.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: python -m pytest -v

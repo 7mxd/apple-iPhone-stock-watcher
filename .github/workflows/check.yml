@@ -46,4 +46,10 @@ jobs:
             exit 0
           fi
           git commit -m "chore: update availability state [skip ci]"
+          # A concurrent run (or a manual commit landing mid-poll) can move
+          # the remote branch between checkout and push. Without rebasing
+          # first, that race is a non-fast-forward failure that silently
+          # drops this run's health timestamp -- exactly the moment a
+          # broken checker most needs to be recorded.
+          git pull --rebase
           git push
