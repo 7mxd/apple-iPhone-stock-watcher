@@ -1,0 +1,28 @@
+# What to watch. See README.md for the full field reference.
+#
+# Location selectors are mutually exclusive: a watch uses exactly one of
+# `stores`, `cities` or `emirates`.
+#
+#   cities:   [Abu Dhabi]  ->  R706 Al Maryah Island, R595 Yas Mall
+#   emirates: [Abu Dhabi]  ->  the above plus R785 Al Jimi Mall (city Al Ain)
+#   stores:   [R706]       ->  exactly what you list
+#
+# Validate any change before committing it:  python -m applewatch --dry-run
+
+ntfy_topic_env: NTFY_TOPIC
+poll_location: Abu Dhabi
+reminder_minutes: 30
+
+watches:
+  - name: "Burgundy 512GB Pro Max, Abu Dhabi city"
+    model: iphone18promax
+    capacity: [512gb]
+    color: [burgundy]
+    cities: [Abu Dhabi]
+    priority: urgent
+
+  # To also cover Al Jimi Mall in Al Ain (133 km, Abu Dhabi emirate), replace
+  # the `cities` line above with:
+  #     emirates: [Abu Dhabi]
+  # Replace it rather than adding a second watch: overlapping watches are
+  # deduplicated by store, but a second watch is simply redundant.
