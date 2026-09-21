@@ -1,0 +1,46 @@
+name: check-stock
+
+on:
+  schedule:
+    # Every 5 minutes. GitHub drifts under load, so expect 5 to 15 minutes
+    # in practice. This is the documented minimum interval.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+# Overlapping runs would race the state commit.
+concurrency:
+  group: check-stock
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Check availability
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python -m applewatch
+
+      - name: Commit state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          if git diff --cached --quiet; then
+            echo "no state change"
+            exit 0
+          fi
+          git commit -m "chore: update availability state [skip ci]"
+          git push
