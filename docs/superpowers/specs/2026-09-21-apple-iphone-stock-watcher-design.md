@@ -119,6 +119,13 @@ Two states were observed live:
 | `unavailable` | No stock for same-day pickup | All stores, burgundy 512 |
 | `ineligible` | Not offered for pickup at that store | Dubai Mall, black 512 |
 
+> **Addendum, 2026-09-22.** The positive value has since been observed in
+> production: `pickupDisplay: "available"` with `pickupSearchQuote:
+> "Available Today"`. The guess this section declined to hard-code would in
+> fact have been correct. The denylist stays regardless: its value was never
+> that the guess was wrong, but that the design did not have to be right.
+> A burgundy window five minutes wide was caught the same afternoon.
+
 The positive value was **never observed**. At 07:55 on 2026-09-21 the owner's
 screenshots showed black, glacier and silver 512GB as "Available Wed 23 Sep" at Dubai
 Mall; by the evening of the same day that SKU had flipped to `ineligible`. The stock

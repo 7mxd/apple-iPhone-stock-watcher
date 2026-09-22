@@ -2,45 +2,216 @@
 
 ## What this does
 
-Every five minutes, a GitHub Actions workflow polls Apple UAE's store-pickup
+Every few minutes, a small Python program polls Apple UAE's store-pickup
 availability endpoint for the iPhone(s) you specify and pushes an
 [ntfy](https://ntfy.sh) notification to your phone the moment one becomes
 collectable at a watched store. There is no UI and no automated purchasing:
 the notification links straight to Apple's own buy page, and you take it
 from there by hand.
 
-## Quick start
+It runs in two places at once, on purpose:
 
-1. Fork this repository.
-2. Pick an ntfy topic (see [ntfy setup](#ntfy-setup) below for how to choose
-   one that can't be guessed) and set it as a repository secret:
-   ```bash
-   gh secret set NTFY_TOPIC --body "<your-topic>"
-   ```
-   or, in the GitHub UI, **Settings -> Secrets and variables -> Actions ->
-   New repository secret**.
-3. Enable Actions on your fork (the Actions tab prompts you the first time).
-   The `check-stock` workflow then polls every five minutes on its own.
-4. Edit `watches.yml` to describe the phone(s) and store(s) you want (see
-   [Configuring watches](#configuring-watches) below), and validate the
-   change with `python -m applewatch --dry-run` (see
-   [Validating a change](#validating-a-change)) before committing it.
-5. **Mandatory: verify delivery end to end, not just that the secret is
-   set.** ntfy silently auto-creates a topic the first time anything posts
-   to it, so a typo'd `NTFY_TOPIC` secret still returns success from ntfy,
-   every scheduled run still shows green in Actions, and you get permanent
-   silence with nothing anywhere telling you it is wrong. Prove the whole
-   path works, from this repo to your phone, using the exact topic value
-   you just set as the secret:
-   ```bash
-   export NTFY_TOPIC="<your-topic>"
-   python -m applewatch --force-notify
-   ```
-   This resolves your real `watches.yml` down to its first watched pair and
-   sends one real alert for it. You should feel your phone buzz within a
-   few seconds. If nothing arrives, recheck the topic spelling in both
-   places (the exported value and the repository secret) before trusting
-   any run to actually notify you.
+- **A local scheduled task, every 5 minutes.** This is the one that
+  actually catches things. See [Polling cadence](#polling-cadence-why-the-local-runner-is-the-primary-one).
+- **A GitHub Actions cron, as a safety net** for when your machine is off.
+
+New here? Start at [Setup, step by step](#setup-step-by-step).
+
+## Does it actually work?
+
+Yes, and the margin is thinner than you would guess.
+
+<img src="docs/images/alert-burgundy-5-minute-window.jpg" width="420" alt="Two ntfy notifications: an urgent IN STOCK alert for iPhone 18 Pro Max 512GB Burgundy at Yas Mall at 3:53 PM, and a Gone alert at 3:58 PM reading Window lasted 5 min.">
+
+**That window was five minutes wide.** Burgundy 512GB appeared at Yas Mall
+at 3:53 PM and was gone by 3:58 PM. The local runner caught it on its very
+next poll. The GitHub Actions cron, which in practice fires every three to
+four hours, would have missed it with better than 95% probability.
+
+Note the two priority tiers in action: the in-stock alert carries the red
+siren and the urgent chevrons, because burgundy is the finish this
+particular config actually wants. The routine traffic below looks different:
+
+<img src="docs/images/alert-timeline.jpg" width="420" alt="A timeline of ntfy notifications showing black 512GB going in stock at Al Maryah Island at 12:28 PM and gone at 12:33 PM after 5 minutes, black at Yas Mall gone after 105 minutes, and a still-in-stock reminder for silver at Al Maryah Island after 130 minutes.">
+
+Two things worth reading off that timeline. Windows vary enormously: the
+same finish lasted 5 minutes at one store and 105 minutes at another on the
+same afternoon. And the `Gone` and `Still in stock` messages are not noise,
+they are how you tell "I missed it" from "it is still sitting there",
+without opening Apple's site to check.
+
+## Setup, step by step
+
+Written for someone who has not used this kind of tool before. Nine steps,
+about fifteen minutes. Commands are Windows PowerShell; notes for macOS and
+Linux are inline. You do not need to understand the code to run it.
+
+### What you need first
+
+- **Python 3.11 or newer.** Check with `python --version`. If that errors or
+  shows an older version, install it from [python.org](https://python.org)
+  and tick **"Add Python to PATH"** during setup.
+- **Git.** Check with `git --version`, or install from
+  [git-scm.com](https://git-scm.com).
+- An **iPhone or Android phone** for the alerts.
+- A **GitHub account**, only if you want the optional cloud safety net in
+  step 8.
+
+### Step 1: Get the code
+
+```powershell
+git clone https://github.com/7mxd/apple-iPhone-stock-watcher.git
+cd apple-iPhone-stock-watcher
+```
+
+### Step 2: Install it
+
+```powershell
+pip install -e .
+```
+
+The `-e` means the install points at this folder, so editing `watches.yml`
+later takes effect immediately with nothing to reinstall.
+
+Verify it worked:
+
+```powershell
+python -m applewatch --dry-run
+```
+
+You should see a line like `watching 4 SKU(s) across 8 store pair(s)`.
+`--dry-run` never sends anything, so it is always safe to run.
+
+### Step 3: Choose your secret topic name
+
+ntfy delivers notifications to a "topic", which is just a name you invent.
+**Anyone who knows the name can read your notifications**, so the name is
+the only thing protecting them. Do not use something guessable like
+`iphone-alerts`.
+
+Make it long and random, for example:
+
+```
+apple-stock-a7f3k9-q2xw8m
+```
+
+Write it down. You will paste it in three places below, and it must match
+exactly every time, including spelling and hyphens.
+
+### Step 4: Set up your phone
+
+1. Install **ntfy** from the App Store or Google Play.
+2. Open it, tap **+**, choose **Subscribe to topic**.
+3. Type your topic name from step 3. Leave the server as `ntfy.sh`.
+4. Allow notifications when prompted.
+
+**On iPhone, do these two as well.** Skipping them is the single most common
+way to end up with a watcher that works perfectly and still never wakes you:
+
+- **Settings → Notifications → ntfy → enable Time Sensitive Notifications.**
+- **Settings → Focus → Sleep → Apps → add ntfy.** Restocks happen at all
+  hours. Without this, a 3am alert waits politely until morning, by which
+  point the phone is gone.
+
+### Step 5: Tell the program your topic
+
+```powershell
+setx NTFY_TOPIC "your-topic-from-step-3"
+```
+
+Then **close and reopen your terminal**, because `setx` only affects new
+sessions.
+
+On macOS or Linux, add `export NTFY_TOPIC="your-topic-from-step-3"` to your
+`~/.zshrc` or `~/.bashrc` instead.
+
+This keeps the topic out of the repository, which is public.
+
+### Step 6: Prove the alerts actually reach you
+
+**Do not skip this.** ntfy creates a topic automatically the first time
+anything posts to one, so a misspelled topic still returns success. Every
+run will look healthy and you will simply never be told anything. This is
+the only step that catches that.
+
+```powershell
+python -m applewatch --force-notify
+```
+
+Your phone should buzz within a few seconds with a test alert. If nothing
+arrives, the topic in step 5 does not match the one in step 4. Fix that
+before going further; nothing else in this list matters until this works.
+
+### Step 7: Say what you want to watch
+
+Open `watches.yml` in any text editor. Out of the box it watches every
+512GB iPhone 18 Pro Max finish at the two Abu Dhabi city stores, with
+burgundy at a louder priority than the rest.
+
+To change it, see [Configuring watches](#configuring-watches). Then always
+check your edit before relying on it:
+
+```powershell
+python -m applewatch --dry-run
+```
+
+This prints exactly which phones and which stores your rules resolve to, so
+you never have to guess whether a rule means what you think it means. A
+typo raises a clear error rather than silently watching nothing.
+
+### Step 8: Start the local watcher (the important one)
+
+This is what polls every five minutes and what will actually catch a
+restock.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1
+```
+
+That registers a Windows scheduled task named `AppleStockWatcher`. Confirm
+it is alive:
+
+```powershell
+Get-ScheduledTaskInfo -TaskName AppleStockWatcher
+```
+
+`LastTaskResult: 0` means the last run succeeded.
+
+On macOS or Linux there is no equivalent script; add a cron entry instead:
+
+```
+*/5 * * * * cd /path/to/apple-iPhone-stock-watcher && /usr/bin/python3 -m applewatch
+```
+
+### Step 9 (optional): The cloud safety net
+
+The local task only runs while your computer is on. GitHub Actions covers
+the rest, slowly. Fork this repo, then:
+
+```powershell
+gh secret set NTFY_TOPIC --body "your-topic-from-step-3"
+```
+
+Or in the GitHub UI: **Settings → Secrets and variables → Actions → New
+repository secret**. Then enable Actions on your fork; the Actions tab
+prompts you the first time.
+
+Be clear about what this gives you: a poll every three to four hours, not
+every five minutes. See
+[Polling cadence](#polling-cadence-why-the-local-runner-is-the-primary-one)
+for why, and why it is a backstop rather than the main event.
+
+### You are done
+
+Leave it running. When a watched phone appears, your phone buzzes with the
+store name and Apple's own pickup wording, and tapping the alert opens the
+buy page.
+
+Stop it at any time with:
+
+```powershell
+Unregister-ScheduledTask -TaskName AppleStockWatcher -Confirm:$false
+```
 
 ## Configuring watches
 
@@ -268,24 +439,44 @@ happens to see stock:
 
 Tapping any of these opens the phone's page on `apple.com/ae`.
 
-## Polling cadence, and the local fast lane
+## Polling cadence: why the local runner is the primary one
 
-The workflow asks for `*/5 * * * *`, but GitHub throttles scheduled
-workflows hard. Measured on this repo over seven hours: **three runs, an
-average gap of 3 hours 42 minutes, roughly 3% of the configured rate.**
-GitHub queues cron best-effort and deprioritises it, and the `[skip ci]`
-state commits do not count as activity that would help.
+This project began as GitHub Actions only. That did not survive contact
+with reality, and the change is worth explaining because the original
+design looks perfectly reasonable on paper.
 
-That blind spot is wide enough to straddle a restock window entirely, so
-the cloud cron alone is a safety net rather than a fast lane.
+**The plan.** `.github/workflows/check.yml` asks for `*/5 * * * *`, a poll
+every five minutes, free and with no dependency on any machine of yours
+being switched on.
 
-`scripts/local_check.ps1` closes the gap by running the same checker
-locally on a short interval while your machine is awake. Register it once:
+**What actually happened.** Measured on this repo over seven hours:
+**three runs, an average gap of 3 hours 42 minutes, about 3% of the rate
+configured.** GitHub queues scheduled workflows on a best-effort basis and
+deprioritises them heavily, and the `[skip ci]` state commits do not count
+as the kind of repository activity that would help.
+
+**Why that is fatal here rather than merely annoying.** Restock windows are
+short. Observed on a single afternoon:
+
+| Phone | Store | Window |
+|---|---|---|
+| Burgundy 512GB | Yas Mall | **5 minutes** |
+| Black 512GB | Al Maryah Island | 5 minutes |
+| Black 512GB | Yas Mall | 105 minutes |
+| Silver 512GB | Al Maryah Island | 130 minutes and counting |
+
+A three-to-four-hour polling gap against a five-minute window is not a
+degraded service, it is a coin flip you lose almost every time. The
+burgundy alert at the top of this README was caught by the local runner on
+its next poll. The cloud cron would have missed it outright.
+
+**The fix.** `scripts/local_check.ps1` runs the same checker locally on a
+short interval while your machine is awake, and became the primary poller.
+The Actions cron stays enabled as a genuine safety net for hours when the
+machine is off, where a slow check still beats no check. Registration is
+covered in [step 8](#step-8-start-the-local-watcher-the-important-one):
 
 ```powershell
-# NTFY_TOPIC must exist as a USER environment variable (never in this repo)
-setx NTFY_TOPIC "your-topic-here"
-
 powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1
 # optional: -IntervalMinutes 2
 ```
@@ -332,10 +523,15 @@ every UAE store's availability for the requested part numbers in a single
 response, so store filtering is entirely a local concern; there is no
 per-store request. A store counts as in stock when its `pickupDisplay`
 value is anything other than `unavailable` or `ineligible`, a denylist
-rather than a check for a known positive string, because the positive
-value Apple actually sends has never been directly observed; see
-[design spec 3.4](docs/superpowers/specs/2026-09-21-apple-iphone-stock-watcher-design.md#34-observed-pickupdisplay-states-and-why-the-match-rule-is-a-denylist)
-for why matching this way was chosen over hard-coding a guess.
+rather than a check for a known positive string.
+
+That choice was made when the positive value had never been observed, so
+hard-coding a guess risked a watcher that silently never fired. It has
+since been seen in the wild: `pickupDisplay: "available"`, quoted as
+`"Available Today"`. The guess would have been right, and the denylist is
+being kept anyway, because it costs nothing and it is the reason the
+project never depended on being right. See
+[design spec 3.4](docs/superpowers/specs/2026-09-21-apple-iphone-stock-watcher-design.md#34-observed-pickupdisplay-states-and-why-the-match-rule-is-a-denylist).
 
 ## Scope
 
