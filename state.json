@@ -1,4 +1,28 @@
 {
+  "MJX94AH/A|R595": {
+    "last_notified": "2026-09-22T10:48:18.114673+04:00",
+    "quote": "Available Today",
+    "since": "2026-09-22T10:48:18.114673+04:00",
+    "status": "hit"
+  },
+  "MJX94AH/A|R706": {
+    "last_notified": "2026-09-22T10:48:18.114673+04:00",
+    "quote": "Available Today",
+    "since": "2026-09-22T10:48:18.114673+04:00",
+    "status": "hit"
+  },
+  "MJXA4AH/A|R595": {
+    "last_notified": "2026-09-22T10:48:18.114673+04:00",
+    "quote": "Available Today",
+    "since": "2026-09-22T10:48:18.114673+04:00",
+    "status": "hit"
+  },
+  "MJXA4AH/A|R706": {
+    "last_notified": "2026-09-22T10:48:18.114673+04:00",
+    "quote": "Available Today",
+    "since": "2026-09-22T10:48:18.114673+04:00",
+    "status": "hit"
+  },
   "MJXC4AH/A|R595": {
     "last_notified": null,
     "quote": "Currently unavailable",
@@ -10,6 +34,18 @@
     "quote": "Currently unavailable",
     "since": "2026-09-21T22:41:28.375037+04:00",
     "status": "miss"
+  },
+  "MJXD4AH/A|R595": {
+    "last_notified": "2026-09-22T10:48:18.114673+04:00",
+    "quote": "Available Today",
+    "since": "2026-09-22T10:48:18.114673+04:00",
+    "status": "hit"
+  },
+  "MJXD4AH/A|R706": {
+    "last_notified": "2026-09-22T10:48:18.114673+04:00",
+    "quote": "Available Today",
+    "since": "2026-09-22T10:48:18.114673+04:00",
+    "status": "hit"
   },
   "_heartbeat": "2026-09-22T02:11:48.255996+04:00"
 }
