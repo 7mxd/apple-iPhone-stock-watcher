@@ -19,7 +19,13 @@
 #>
 
 param(
-    [int]$IntervalMinutes = 5,
+    # Defaults to 2 minutes because this project has observed restock windows
+    # as short as 5 minutes (burgundy 512GB at Yas Mall, 2026-09-22). A
+    # 5-minute interval gives such a window a single chance and can miss it
+    # outright; 2 minutes gives two or three. At one request per run this is
+    # roughly 720 requests a day, comparable to someone refreshing the
+    # product page by hand.
+    [int]$IntervalMinutes = 2,
     [string]$TaskName = 'AppleStockWatcher'
 )
 

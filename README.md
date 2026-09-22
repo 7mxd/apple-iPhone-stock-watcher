@@ -11,7 +11,7 @@ from there by hand.
 
 It runs in two places at once, on purpose:
 
-- **A local scheduled task, every 5 minutes.** This is the one that
+- **A local scheduled task, every 2 minutes.** This is the one that
   actually catches things. See [Polling cadence](#polling-cadence-why-the-local-runner-is-the-primary-one).
 - **A GitHub Actions cron, as a safety net** for when your machine is off.
 
@@ -161,15 +161,15 @@ typo raises a clear error rather than silently watching nothing.
 
 ### Step 8: Start the local watcher (the important one)
 
-This is what polls every five minutes and what will actually catch a
+This is what polls every couple of minutes and what will actually catch a
 restock.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1
 ```
 
-That registers a Windows scheduled task named `AppleStockWatcher`. Confirm
-it is alive:
+That registers a Windows scheduled task named `AppleStockWatcher`, polling
+every two minutes. Confirm it is alive:
 
 ```powershell
 Get-ScheduledTaskInfo -TaskName AppleStockWatcher
@@ -180,7 +180,7 @@ Get-ScheduledTaskInfo -TaskName AppleStockWatcher
 On macOS or Linux there is no equivalent script; add a cron entry instead:
 
 ```
-*/5 * * * * cd /path/to/apple-iPhone-stock-watcher && /usr/bin/python3 -m applewatch
+*/2 * * * * cd /path/to/apple-iPhone-stock-watcher && /usr/bin/python3 -m applewatch
 ```
 
 ### Step 9 (optional): The cloud safety net
@@ -514,7 +514,7 @@ backstops.
 A repeat "stock checker is broken" health alert (for the missing-pair row
 above, or for any other unexpected failure inside a run) is itself
 rate-limited to once per 6 hours, so an extended outage sends one push, not
-one every five minutes.
+one per poll.
 
 ## How it works
 
