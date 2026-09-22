@@ -55,7 +55,7 @@ Linux are inline. You do not need to understand the code to run it.
   [git-scm.com](https://git-scm.com).
 - An **iPhone or Android phone** for the alerts.
 - A **GitHub account**, only if you want the optional cloud safety net in
-  step 8.
+  step 9.
 
 ### Step 1: Get the code
 
@@ -271,6 +271,49 @@ current stock look identical from the outside.
   exclusive**. Setting more than one on the same watch is a config error at
   startup, not a union or an intersection. Set at most one; omitting all
   three watches every store.
+
+### Overlapping watches, and using them to tier priority
+
+Two watches may cover the same phone at the same store. That is allowed,
+and useful.
+
+When several watches match one (phone, store) pair, **exactly one alert
+fires**, carrying the **highest** priority among the matching watches and
+naming all of them in the `Watch:` line. You never get one notification
+per rule.
+
+That turns overlap into the way you say "alert me for everything, but shout
+for this one". It is what the shipped `watches.yml` does:
+
+```yaml
+  - name: "Burgundy 512GB Pro Max, Abu Dhabi city"
+    model: iphone18promax
+    capacity: [512gb]
+    color: [burgundy]
+    cities: [Abu Dhabi]
+    priority: urgent
+
+  - name: "Any other 512GB Pro Max finish, Abu Dhabi city"
+    model: iphone18promax
+    capacity: [512gb]
+    cities: [Abu Dhabi]
+    priority: default
+```
+
+The second rule omits `color`, so it covers all four finishes including
+burgundy. Burgundy therefore matches both rules and resolves to `urgent`;
+black, silver and glacier match only the second and resolve to `default`.
+On the lock screen the finish you actually want announces itself, and the
+acceptable fallbacks arrive quietly.
+
+Omitting `color` rather than listing three finishes also means a finish
+Apple adds later is picked up automatically, at `default`.
+
+Check any tiering you write, because getting it backwards is silent:
+
+```powershell
+python -m applewatch --dry-run
+```
 
 ### The Al Jimi worked example
 
@@ -508,6 +551,10 @@ backstops.
 | No alerts ever arrive, even when you know stock changed | iOS Focus is silencing ntfy | Check the Time Sensitive and sleep-Focus allowlist steps above, then confirm the pipe still works with `python -m applewatch --force-notify` (sends one real alert for the first watched pair and exits). |
 | Run refuses to start with `config error:` followed by `unknown color [...]` (or `model`/`store`/`city`/`emirate`/`priority`) | Typo in `watches.yml` | Every valid value is enumerated in the field table above; compare byte-for-byte, including case. |
 | `apple request failed: Apple did not report N of M watched pair(s)...` and exit code `1` | Apple rotated one or more part numbers, or otherwise stopped reporting a watched pair. Any missing pair, partial or total, is what a rotated part number or a broken response shape looks like, not what "nobody has stock" looks like, so this is always treated as a broken checker, never as a quiet, permanent absence of stock | Run `python scripts/refresh_catalog.py` to regenerate `catalog.json`, `git diff catalog.json` to see what changed, then `--dry-run` to confirm the watch resolves to the new SKU. Note that state keys are part-number based, so if a pair was already in stock under the old part number, it will re-alert once after the rotation: the new part number starts with no history of its own. |
+| The local task shows `LastTaskResult: 267011` | Not an error: that code means "the task has not run yet". It is normal immediately after registering or re-registering the task | Wait for `NextRunTime`, or force one now with `Start-ScheduledTask -TaskName AppleStockWatcher`. Anything other than `0` after a genuine run is worth investigating |
+| No alerts, and the local task looks fine, but the log says `SKIP: NTFY_TOPIC is not set` | The scheduled task runs as your user and reads `NTFY_TOPIC` from your **user** environment. Setting it only in a terminal session, or only as a GitHub secret, is not enough | `setx NTFY_TOPIC "<your-topic>"`, then re-register the task so it picks up the new environment. Confirm with `Get-Content "$env:TEMPpplewatch-local.log" -Tail 5` |
+| The local task silently stops polling overnight | It is registered to run only while you are logged on, and a sleeping or logged-out machine has no session. This is deliberate: running otherwise would mean storing your account password with the task | Nothing to fix locally. This is precisely the gap the GitHub Actions cron exists to cover, slowly. If you need fast overnight coverage, keep the machine awake rather than weakening the task's security |
+| Local and cloud both alert for the same restock | The two runners share `state.json` through git, but a push that loses a race leaves one of them briefly unaware of the other's observation | Harmless, and deliberate: every git step in `local_check.ps1` is best-effort while only the check itself is load-bearing, so a sync failure degrades to a duplicate alert rather than a missed one |
 | The scheduled workflow stopped running | GitHub disables a repository's scheduled workflows after 60 days with no commits | Re-enable it from the Actions tab, or push any commit. |
 | `ntfy POST failed (<SomeExceptionType>)` with no further detail, in stdout/stderr/Actions logs | Deliberate: ntfy failures are reported by exception type only, never by message. The underlying `requests` error embeds the full `https://ntfy.sh/<topic>` URL in its text, and this repository's Actions logs are public, so letting that string reach a log would leak the one secret this project has. | Don't go looking for more detail in the logs, there isn't any, by design. Confirm the topic still exists with `curl -d "test" ntfy.sh/<topic>`, and confirm `NTFY_TOPIC` is still set as a secret. |
 
