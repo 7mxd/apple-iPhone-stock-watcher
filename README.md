@@ -268,6 +268,48 @@ happens to see stock:
 
 Tapping any of these opens the phone's page on `apple.com/ae`.
 
+## Polling cadence, and the local fast lane
+
+The workflow asks for `*/5 * * * *`, but GitHub throttles scheduled
+workflows hard. Measured on this repo over seven hours: **three runs, an
+average gap of 3 hours 42 minutes, roughly 3% of the configured rate.**
+GitHub queues cron best-effort and deprioritises it, and the `[skip ci]`
+state commits do not count as activity that would help.
+
+That blind spot is wide enough to straddle a restock window entirely, so
+the cloud cron alone is a safety net rather than a fast lane.
+
+`scripts/local_check.ps1` closes the gap by running the same checker
+locally on a short interval while your machine is awake. Register it once:
+
+```powershell
+# NTFY_TOPIC must exist as a USER environment variable (never in this repo)
+setx NTFY_TOPIC "your-topic-here"
+
+powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1
+# optional: -IntervalMinutes 2
+```
+
+Useful afterwards:
+
+```powershell
+Get-ScheduledTaskInfo -TaskName AppleStockWatcher   # last result, next run
+Get-Content "$env:TEMP\applewatch-local.log" -Tail 20
+Start-ScheduledTask   -TaskName AppleStockWatcher   # run immediately
+Unregister-ScheduledTask -TaskName AppleStockWatcher -Confirm:$false
+```
+
+Both runners share `state.json` through git, so whichever sees a
+transition first records it and the other stays quiet. The local script
+treats every git step as best-effort and only the check itself as
+load-bearing, so a sync failure degrades to a possible duplicate alert,
+never a missed one.
+
+The task runs only while you are logged on (a locked session counts).
+Running it otherwise would require storing your account password with the
+task, which is not worth it for a fast lane that the cloud cron already
+backstops.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
