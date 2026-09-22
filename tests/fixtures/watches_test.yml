@@ -1,0 +1,23 @@
+# Fixed configuration for the CLI tests.
+#
+# The suite must NOT read the repository's live watches.yml. Editing that
+# file is the documented way to use this project, so coupling the tests to
+# it means every legitimate change to what the owner watches breaks CI.
+# These tests describe CLI behaviour, not anyone's shopping list.
+#
+# This deliberately matches the recorded fixtures: burgundy 512GB Pro Max
+# (MJXC4AH/A) is the only part number present in pickup_unavailable.json and
+# pickup_available_synthetic.json, so a wider watch here would make the
+# "Apple did not report N watched pair(s)" path fire in every test.
+
+ntfy_topic_env: NTFY_TOPIC
+poll_location: Abu Dhabi
+reminder_minutes: 30
+
+watches:
+  - name: "Burgundy 512GB Pro Max, Abu Dhabi city"
+    model: iphone18promax
+    capacity: [512gb]
+    color: [burgundy]
+    cities: [Abu Dhabi]
+    priority: urgent

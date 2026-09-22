@@ -6,6 +6,20 @@ import pytest
 from applewatch import cli
 
 FIXTURES = Path(__file__).parent / "fixtures"
+TEST_CONFIG = FIXTURES / "watches_test.yml"
+
+
+@pytest.fixture(autouse=True)
+def isolated_config(monkeypatch):
+    """Pin every CLI test to a fixed config instead of the repo's live one.
+
+    Editing watches.yml is the documented way to use this project, so a
+    suite that reads it fails whenever the owner legitimately changes what
+    they watch. These tests cover CLI behaviour, not the current shopping
+    list. The shipped watches.yml is validated separately, by
+    test_config.py, without pinning any particular SKU or store count.
+    """
+    monkeypatch.setattr(cli, "DEFAULT_CONFIG_PATH", TEST_CONFIG)
 
 
 @pytest.fixture

@@ -94,3 +94,19 @@ def test_no_location_selector_is_allowed(tmp_path):
     body = BASE.replace("    cities: [Abu Dhabi]\n", "")
     config = load_config(write(tmp_path, body), CATALOG, STORES)
     assert config.watches[0].cities == ()
+
+
+def test_shipped_watches_yml_is_valid_and_resolves_to_something():
+    """Guards the live config without pinning it.
+
+    Asserts the file the project actually ships loads cleanly and matches at
+    least one (sku, store) pair, so a typo or an over-narrow rule cannot go
+    unnoticed. Deliberately asserts no specific counts, colours or stores:
+    the owner is expected to edit this file, and doing so must not fail CI.
+    """
+    from applewatch.config import DEFAULT_CONFIG_PATH
+    from applewatch.rules import collect_matches
+
+    config = load_config(DEFAULT_CONFIG_PATH, CATALOG, STORES)
+    matches = collect_matches(config.watches, CATALOG, STORES)
+    assert matches, "shipped watches.yml resolves to no (sku, store) pairs"
