@@ -14,17 +14,32 @@ poll_location: Abu Dhabi
 reminder_minutes: 30
 
 watches:
-  # `color` is omitted deliberately, which means "no constraint": all four
-  # finishes are watched, and any finish Apple adds later is picked up
-  # automatically without editing this file.
-  - name: "512GB Pro Max, any finish, Abu Dhabi city"
+  # These two watches OVERLAP on burgundy, deliberately.
+  #
+  # When several watches cover the same (sku, store) pair, exactly one alert
+  # fires and it carries the HIGHEST priority among them. So burgundy matches
+  # both rules below and alerts at `urgent`, while the other finishes match
+  # only the second and alert at `default`. One glance at the lock screen
+  # tells you which one it is.
+  #
+  # The second rule omits `color` rather than listing three finishes, so any
+  # finish Apple adds later is picked up automatically, at `default`.
+
+  - name: "Burgundy 512GB Pro Max, Abu Dhabi city"
     model: iphone18promax
     capacity: [512gb]
+    color: [burgundy]
     cities: [Abu Dhabi]
     priority: urgent
 
+  - name: "Any other 512GB Pro Max finish, Abu Dhabi city"
+    model: iphone18promax
+    capacity: [512gb]
+    cities: [Abu Dhabi]
+    priority: default
+
   # To also cover Al Jimi Mall in Al Ain (133 km, Abu Dhabi emirate), replace
-  # the `cities` line above with:
+  # BOTH `cities` lines above with:
   #     emirates: [Abu Dhabi]
-  # Replace it rather than adding a second watch: overlapping watches are
-  # deduplicated by store, but a second watch is simply redundant.
+  # Replace it rather than adding a second `cities` watch. (Overlapping watches
+  # are fine when tiering priority, as above, but redundant for reach.)
