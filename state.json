@@ -36,16 +36,16 @@
     "status": "miss"
   },
   "MJXD4AH/A|R595": {
-    "last_notified": "2026-09-22T16:43:18.889216+04:00",
-    "quote": "Available Today",
-    "since": "2026-09-22T10:48:18.114673+04:00",
-    "status": "hit"
+    "last_notified": null,
+    "quote": "Currently unavailable",
+    "since": "2026-09-22T16:58:19.087660+04:00",
+    "status": "miss"
   },
   "MJXD4AH/A|R706": {
-    "last_notified": "2026-09-22T16:43:18.889216+04:00",
-    "quote": "Available Today",
-    "since": "2026-09-22T10:48:18.114673+04:00",
-    "status": "hit"
+    "last_notified": null,
+    "quote": "Currently unavailable",
+    "since": "2026-09-22T16:58:19.087660+04:00",
+    "status": "miss"
   },
   "_heartbeat": "2026-09-22T02:11:48.255996+04:00"
 }
