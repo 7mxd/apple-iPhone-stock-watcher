@@ -29,13 +29,21 @@ param(
     # zero failures. A failed poll is a blind poll, so polling too fast
     # costs coverage rather than buying it.
     #
-    # 90 is the current default: a deliberate probe of the middle ground,
-    # about 960 requests a day against 720 at 120s and 1440 at 60s.
+    # 90 seconds was then tried and was worse again: 2 failures in 7 polls,
+    # and the resulting flapping defeated the health-alert rate limit,
+    # producing four "checker is broken" pushes in thirteen minutes.
     #
-    # WATCH THE FAILURE RATE after any change. Anything above zero over a
-    # few hundred polls means go back to 120.
+    # Measured, not guessed:
+    #     60s  -> 1440 req/day ->  5% failures
+    #     90s  ->  960 req/day -> 29% failures (small sample)
+    #    120s  ->  720 req/day ->  0% over 836 polls
+    #
+    # The cliff between 90 and 120 is steep and was not predictable from
+    # first principles. 120 is a measured floor. If you change it, measure
+    # the failure rate rather than reasoning about it; anything above zero
+    # over a few hundred polls means come back to 120.
     [ValidateRange(60, 3600)]
-    [int]$IntervalSeconds = 90,
+    [int]$IntervalSeconds = 120,
     [string]$TaskName = 'AppleStockWatcher'
 )
 

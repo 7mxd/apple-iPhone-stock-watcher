@@ -250,12 +250,6 @@ def main(argv=None) -> int:
                 _report_broken(Path(args.state), topic, now, message)
             return 1
 
-        # A fetch that reached this point recovered (or was never broken),
-        # so any stale _health entry from an earlier failure is
-        # deliberately dropped rather than carried forward: an outage a few
-        # hours after a recovery must be able to alert again immediately,
-        # not stay rate-limited by an unrelated failure that has already
-        # been resolved.
         previous = load_state(Path(args.state))
         events, state = diff(
             matches,
@@ -266,6 +260,28 @@ def main(argv=None) -> int:
             catalog,
             stores,
         )
+
+        # A fetch that reached this point recovered (or was never broken),
+        # so the "currently broken" marker is dropped. The rate-limit
+        # timestamp is NOT: it is carried across recoveries on purpose.
+        #
+        # An earlier version cleared the whole _health entry here, so that
+        # an outage hours after a recovery could alert immediately. That
+        # was wrong under flapping, which is the failure mode that actually
+        # occurs. Polling too fast makes Apple return 541 intermittently,
+        # giving fail/ok/fail, and because every success reset the limiter
+        # every failure alerted again: four "checker is broken" pushes in
+        # thirteen minutes on 2026-09-23, against a limit of one per six
+        # hours.
+        #
+        # Intermittent brokenness is one problem, not N problems. The
+        # timestamp self-expires after HEALTH_ALERT_INTERVAL_HOURS, so a
+        # genuinely new outage still alerts once the window has passed.
+        previous_health = previous.get("_health", {})
+        if previous_health.get("last_error_notified"):
+            state["_health"] = {
+                "last_error_notified": previous_health["last_error_notified"]
+            }
 
         for event in events:
             title, body, _ = render(event)

@@ -11,7 +11,7 @@ from there by hand.
 
 It runs in two places at once, on purpose:
 
-- **A local scheduled task, every 90 seconds.** This is the one that
+- **A local scheduled task, every 2 minutes.** This is the one that
   actually catches things. See [Polling cadence](#polling-cadence-why-the-local-runner-is-the-primary-one).
 - **A GitHub Actions cron, as a safety net** for when your machine is off.
 
@@ -79,7 +79,7 @@ for the contended one.
 15:55 and 19:47. There is no "check in the morning" shortcut, which is the
 argument for automating this rather than refreshing by hand.
 
-This is why the local poller runs every 90 seconds, and why the GitHub Actions
+This is why the local poller runs every 2 minutes, and why the GitHub Actions
 cron at three to four hours is a backstop rather than the mechanism. It is
 also why detection stops being the bottleneck: against a 2-minute window
 the useful question is no longer whether you will be told, but whether you
@@ -206,14 +206,14 @@ typo raises a clear error rather than silently watching nothing.
 
 ### Step 8: Start the local watcher (the important one)
 
-This is what polls every 90 seconds and what will actually catch a restock.
+This is what polls every 2 minutes and what will actually catch a restock.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1
 ```
 
 That registers a Windows scheduled task named `AppleStockWatcher`, polling
-every 90 seconds. Confirm it is alive:
+every 2 minutes. Confirm it is alive:
 
 ```powershell
 Get-ScheduledTaskInfo -TaskName AppleStockWatcher
@@ -224,8 +224,8 @@ Get-ScheduledTaskInfo -TaskName AppleStockWatcher
 On macOS or Linux there is no equivalent script; add a cron entry instead:
 
 ```
-# cron cannot express 90 seconds; its floor is one minute. Use */2 for the
-# proven-safe interval, or a systemd timer if you want 90s exactly.
+# cron's floor is one minute, which is fine: 2 minutes is the measured
+# safe interval anyway. Do not use * * * * * here, see the incident note.
 */2 * * * * cd /path/to/apple-iPhone-stock-watcher && /usr/bin/python3 -m applewatch
 ```
 
@@ -567,7 +567,7 @@ covered in [step 8](#step-8-start-the-local-watcher-the-important-one):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1
-# defaults to every 90 seconds; see the incident note below before lowering it
+# defaults to every 120 seconds; 120 is a measured floor, not a preference
 ```
 
 Useful afterwards:
@@ -612,11 +612,41 @@ often and succeeding every time, and it does so while generating false
 "broken checker" alerts that train you to ignore the real ones. The
 interval went back to 2 minutes and the failures stopped.
 
-The current setting is **90 seconds**, a deliberate probe of the middle
-ground: roughly 960 requests a day, against 720 at 120s and the 1,440 that
-drew rate limiting. Task Scheduler does honour sub-minute precision, storing
-it as `PT1M30S`. Whether 90 is safe is genuinely unknown, which is why the
-failure-rate check below matters.
+90 seconds was then tried as a middle ground, and was worse still: **2
+failures in 7 polls**, plus a second bug it exposed (below). The interval
+is settled at **120 seconds**.
+
+| Interval | Requests/day | Failure rate |
+|---|---|---|
+| 60s | 1,440 | 5% |
+| 90s | 960 | 29% (small sample) |
+| **120s** | **720** | **0% over 836 polls** |
+
+The cliff between 90 and 120 seconds is steep and was not predictable from
+first principles. Treat 120 as a measured floor rather than a cautious
+guess, and re-measure rather than reason if you change it.
+
+### The bug that 90 seconds exposed
+
+Intermittent failures produced **four "checker is broken" alerts in
+thirteen minutes**, against a documented limit of one per six hours.
+
+The rate limit keyed off `_health.last_error_notified`, but a successful
+run deliberately cleared the whole `_health` entry, on the reasoning that a
+fresh outage after a recovery should be able to alert immediately. Under
+flapping (`fail, ok, fail`, which is exactly what rate limiting produces)
+every success reset the limiter and every failure alerted again.
+
+Fixed by carrying `last_error_notified` across a recovery while still
+dropping the `last_error` marker. Intermittent brokenness is one problem,
+not N problems, and the timestamp self-expires after six hours so a
+genuinely new outage still alerts. Covered by
+`test_flapping_failures_do_not_defeat_the_rate_limit`, which fails if the
+old behaviour is restored.
+
+This one is worth dwelling on: the alert spam was arguably more damaging
+than the missed polls, because an alert you learn to swipe away is an alert
+that will not save you when it matters.
 
 Two changes came out of that incident:
 

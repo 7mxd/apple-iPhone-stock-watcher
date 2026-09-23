@@ -261,13 +261,10 @@ def test_health_alert_fires_again_after_six_hours(
     assert len(health_alerts) == 1
 
 
-def test_successful_run_clears_health(monkeypatch, sent, health_alerts, tmp_path):
-    """A recovered checker must not stay rate-limited by a resolved outage.
-
-    Otherwise a fresh outage a couple of hours after a recovery stays
-    suppressed for the rest of the 6-hour window because _health was never
-    cleared.
-    """
+def test_successful_run_clears_the_error_but_keeps_the_rate_limit(
+    monkeypatch, sent, health_alerts, tmp_path
+):
+    """Recovery drops the "broken" marker but keeps the rate-limit clock."""
     state_path = tmp_path / "state.json"
 
     break_apple(monkeypatch)
@@ -277,7 +274,35 @@ def test_successful_run_clears_health(monkeypatch, sent, health_alerts, tmp_path
     cli.main(["--state", str(state_path)])
 
     after = json.loads(state_path.read_text(encoding="utf-8"))
-    assert "_health" not in after
+    assert "last_error" not in after.get("_health", {})
+    assert after["_health"]["last_error_notified"]
+
+
+def test_flapping_failures_do_not_defeat_the_rate_limit(
+    monkeypatch, sent, health_alerts, tmp_path
+):
+    """Regression test for a real incident on 2026-09-23.
+
+    Polling too fast made Apple return 541 intermittently, producing
+    fail/ok/fail. Because a successful run cleared the whole _health entry,
+    every failure that followed a success reset the limiter and alerted
+    again: four "checker is broken" pushes inside thirteen minutes, against
+    a documented limit of one per six hours.
+
+    Intermittent brokenness is one problem, not N problems.
+    """
+    state_path = tmp_path / "state.json"
+
+    for _ in range(3):
+        break_apple(monkeypatch)
+        cli.main(["--state", str(state_path)])
+        stub_apple(monkeypatch, "pickup_unavailable")
+        cli.main(["--state", str(state_path)])
+
+    assert len(health_alerts) == 1, (
+        f"expected one alert across three fail/recover cycles, "
+        f"got {len(health_alerts)}"
+    )
 
 
 # --- Fix round 2 -------------------------------------------------------
