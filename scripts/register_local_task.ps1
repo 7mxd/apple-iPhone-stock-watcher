@@ -3,7 +3,7 @@
     Registers (or re-registers) the local fast-lane poller in Task Scheduler.
 
 .DESCRIPTION
-    Creates a task that runs scripts/local_check.ps1 every minute while the
+    Creates a task that runs scripts/local_check.ps1 every 2 minutes while the
     user is logged on, including when the session is locked. Runs under the
     current user so it inherits the NTFY_TOPIC user environment variable.
 
@@ -19,20 +19,16 @@
 #>
 
 param(
-    # Defaults to 1 minute, the shortest interval Task Scheduler supports.
+    # Defaults to 2 minutes, which is an empirical limit rather than a guess.
     #
-    # Burgundy 512GB was observed in stock three times on 2026-09-23, for 4,
-    # 2 and 2 minutes. A 2-minute poll gives a 2-minute window roughly one
-    # chance; 1 minute gives it two. Burgundy consistently sold out faster
-    # than any other finish (2-4 min, against 14-16 for black), so the
-    # contended finish is exactly the one the interval has to be sized for.
+    # 1-minute polling was tried on 2026-09-23 and Apple began returning
+    # HTTP 541 on roughly 5% of requests within 40 minutes. Measured over
+    # the same log: 836 polls at 2 minutes produced zero failures, 40 polls
+    # at 1 minute produced two. A failed poll is a blind poll, so the faster
+    # interval bought less effective coverage, not more.
     #
-    # Not going below this deliberately. Sub-minute polling needs a sleep
-    # loop to get around Task Scheduler's floor, and at ~1440 requests a day
-    # this is already at the upper end of what passes for human browsing.
-    # Being rate-limited by Apple would cost far more detection than the
-    # extra poll would buy.
-    [int]$IntervalMinutes = 1,
+    # Do not lower this without watching the failure rate in the log.
+    [int]$IntervalMinutes = 2,
     [string]$TaskName = 'AppleStockWatcher'
 )
 

@@ -17,7 +17,19 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 )
 MAX_ATTEMPTS = 3
-BACKOFF_SECONDS = (2, 8)
+
+# Backoff between attempts, in seconds.
+#
+# Widened from (2, 8) after a live incident on 2026-09-23. Polling once a
+# minute made Apple return HTTP 541 on about 5% of requests. All three
+# attempts then fell inside the same short rate-limit window (roughly 10
+# seconds end to end) and the poll was reported as a broken checker, even
+# though the very next poll 48 seconds later succeeded.
+#
+# Retrying quickly into a rate limiter is the one thing guaranteed not to
+# help. These values span roughly 65 seconds, comfortably inside the
+# 2-minute poll interval, and long enough to outlast the window observed.
+BACKOFF_SECONDS = (15, 45)
 
 
 class AppleError(Exception):

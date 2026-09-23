@@ -11,7 +11,7 @@ from there by hand.
 
 It runs in two places at once, on purpose:
 
-- **A local scheduled task, every minute.** This is the one that
+- **A local scheduled task, every 2 minutes.** This is the one that
   actually catches things. See [Polling cadence](#polling-cadence-why-the-local-runner-is-the-primary-one).
 - **A GitHub Actions cron, as a safety net** for when your machine is off.
 
@@ -79,7 +79,7 @@ for the contended one.
 15:55 and 19:47. There is no "check in the morning" shortcut, which is the
 argument for automating this rather than refreshing by hand.
 
-This is why the local poller runs every minute, and why the GitHub Actions
+This is why the local poller runs every 2 minutes, and why the GitHub Actions
 cron at three to four hours is a backstop rather than the mechanism. It is
 also why detection stops being the bottleneck: against a 2-minute window
 the useful question is no longer whether you will be told, but whether you
@@ -206,14 +206,14 @@ typo raises a clear error rather than silently watching nothing.
 
 ### Step 8: Start the local watcher (the important one)
 
-This is what polls every minute and what will actually catch a restock.
+This is what polls every 2 minutes and what will actually catch a restock.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1
 ```
 
 That registers a Windows scheduled task named `AppleStockWatcher`, polling
-every minute. Confirm it is alive:
+every 2 minutes. Confirm it is alive:
 
 ```powershell
 Get-ScheduledTaskInfo -TaskName AppleStockWatcher
@@ -224,7 +224,7 @@ Get-ScheduledTaskInfo -TaskName AppleStockWatcher
 On macOS or Linux there is no equivalent script; add a cron entry instead:
 
 ```
-* * * * * cd /path/to/apple-iPhone-stock-watcher && /usr/bin/python3 -m applewatch
+*/2 * * * * cd /path/to/apple-iPhone-stock-watcher && /usr/bin/python3 -m applewatch
 ```
 
 ### Step 9 (optional): The cloud safety net
@@ -565,7 +565,7 @@ covered in [step 8](#step-8-start-the-local-watcher-the-important-one):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1
-# optional: -IntervalMinutes 2
+# defaults to every 2 minutes; see the incident note below before lowering it
 ```
 
 Useful afterwards:
@@ -587,6 +587,43 @@ The task runs only while you are logged on (a locked session counts).
 Running it otherwise would require storing your account password with the
 task, which is not worth it for a fast lane that the cloud cron already
 backstops.
+
+## What happened when we tried 1 minute
+
+Burgundy's windows on 2026-09-23 were 4, 2 and 2 minutes long, so a faster
+poll looked like an obvious win: a 2-minute interval gives a 2-minute
+window about one chance, a 1-minute interval gives it two. The interval was
+duly dropped to 1 minute.
+
+Apple disagreed. Within 40 minutes the endpoint began returning
+`HTTP 541 Server Error` and the watcher pushed a `Stock checker is broken`
+alert. Measured on the same log:
+
+| Cadence | Polls | Failed | Failure rate |
+|---|---|---|---|
+| 2 minutes | 836 | 0 | 0% |
+| 1 minute | 40 | 2 | 5% |
+
+**A failed poll is a blind poll.** Doubling the polling rate while losing
+5% of polls to rate limiting buys less usable coverage than polling half as
+often and succeeding every time, and it does so while generating false
+"broken checker" alerts that train you to ignore the real ones. The
+interval went back to 2 minutes and the failures stopped.
+
+Two changes came out of that incident:
+
+- **The interval floor is 2 minutes**, documented in
+  `scripts/register_local_task.ps1`. Lower it only while watching the
+  failure rate in `%TEMP%pplewatch-local.log`.
+- **Retry backoff widened from (2, 8) seconds to (15, 45).** All three
+  attempts had been landing inside the same rate-limit window, roughly ten
+  seconds wide, while the next scheduled poll 48 seconds later succeeded.
+  Retrying quickly into a rate limiter is the one thing guaranteed not to
+  help.
+
+The incident is also the first production proof of the design's central
+promise: when the checker broke, it said so on the phone within one poll,
+rather than going quiet and letting the silence read as "no stock".
 
 ## Troubleshooting
 
