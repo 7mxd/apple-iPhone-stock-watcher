@@ -626,6 +626,39 @@ The cliff between 90 and 120 seconds is steep and was not predictable from
 first principles. Treat 120 as a measured floor rather than a cautious
 guess, and re-measure rather than reason if you change it.
 
+### Tuning the interval safely
+
+Three interval experiments went wrong in a row, each needing manual rescue.
+Two scripts now make the process self-correcting, so a bad experiment costs
+a log line rather than a night of blindness.
+
+`scripts/interval_guard.ps1` runs every 10 minutes. If the interval is
+faster than 120 seconds and any poll has failed in the last 20, it reverts
+to 120 and logs why. It only ever moves the interval in the safe direction,
+and any error in the guard itself leaves the interval untouched.
+
+`scripts/try_faster_interval.ps1` starts a trial, but refuses unless the
+last 20 polls are clean. That gate exists because of a specific mistake:
+90 seconds was first "measured" inside an active penalty window, which
+produced a confident and completely wrong conclusion that 90 was worse than
+60. Measuring a rate limit while being rate limited measures the penalty,
+not the interval.
+
+```powershell
+# start a trial by hand (aborts on its own if the baseline is dirty)
+powershell -ExecutionPolicy Bypass -File scripts	ry_faster_interval.ps1 -TrialSeconds 90
+
+# what the guard has decided, and why
+Get-Content "$env:TEMPpplewatch-guard.log" -Tail 20
+
+# stop tuning altogether
+Unregister-ScheduledTask -TaskName AppleStockWatcherGuard -Confirm:$false
+```
+
+Both paths were verified live rather than assumed: the guard was watched
+reverting 90s to 120s off real failures, and the trial was watched refusing
+to start against a dirty baseline.
+
 ### Retrying a rate limit makes it worse
 
 A failing poll originally made three requests. That tripled the cost of
