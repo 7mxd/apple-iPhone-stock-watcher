@@ -612,14 +612,29 @@ often and succeeding every time, and it does so while generating false
 "broken checker" alerts that train you to ignore the real ones. The
 interval went back to 2 minutes and the failures stopped.
 
-90 seconds was then tried as a middle ground, and was worse still: **2
-failures in 7 polls**, plus a second bug it exposed (below). The interval
-is settled at **120 seconds**.
+90 seconds was then tried twice. The first attempt was botched: it ran
+inside an active penalty window with retry amplification still inflating
+the real request rate, and the "2 failures in 7 polls" it produced measured
+the penalty rather than the interval.
+
+The second attempt, on 2026-09-24, was clean. It started only after 20
+consecutive good polls, with 541 fail-fast already in place. It held for 18
+minutes, then drew 2 failures in 20 polls and the guard reverted it
+automatically:
+
+```
+00:30  TRIAL START: 20 clean polls, trying 90s
+00:38  holding at 90s, 20 recent polls all clean
+00:48  REVERT: 2 failure(s) in last 20 polls at 90s -> 120s
+```
+
+**120 seconds is the floor.** That is now a measured result from a properly
+controlled test, not an inference.
 
 | Interval | Requests/day | Failure rate |
 |---|---|---|
 | 60s | 1,440 | 5% |
-| 90s | 960 | 29% (small sample) |
+| 90s | 960 | fails within ~18 min (clean test) |
 | **120s** | **720** | **0% over 836 polls** |
 
 The cliff between 90 and 120 seconds is steep and was not predictable from
