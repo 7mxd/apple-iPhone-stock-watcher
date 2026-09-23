@@ -11,7 +11,7 @@ from there by hand.
 
 It runs in two places at once, on purpose:
 
-- **A local scheduled task, every 2 minutes.** This is the one that
+- **A local scheduled task, every 90 seconds.** This is the one that
   actually catches things. See [Polling cadence](#polling-cadence-why-the-local-runner-is-the-primary-one).
 - **A GitHub Actions cron, as a safety net** for when your machine is off.
 
@@ -79,7 +79,7 @@ for the contended one.
 15:55 and 19:47. There is no "check in the morning" shortcut, which is the
 argument for automating this rather than refreshing by hand.
 
-This is why the local poller runs every 2 minutes, and why the GitHub Actions
+This is why the local poller runs every 90 seconds, and why the GitHub Actions
 cron at three to four hours is a backstop rather than the mechanism. It is
 also why detection stops being the bottleneck: against a 2-minute window
 the useful question is no longer whether you will be told, but whether you
@@ -206,14 +206,14 @@ typo raises a clear error rather than silently watching nothing.
 
 ### Step 8: Start the local watcher (the important one)
 
-This is what polls every 2 minutes and what will actually catch a restock.
+This is what polls every 90 seconds and what will actually catch a restock.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1
 ```
 
 That registers a Windows scheduled task named `AppleStockWatcher`, polling
-every 2 minutes. Confirm it is alive:
+every 90 seconds. Confirm it is alive:
 
 ```powershell
 Get-ScheduledTaskInfo -TaskName AppleStockWatcher
@@ -224,6 +224,8 @@ Get-ScheduledTaskInfo -TaskName AppleStockWatcher
 On macOS or Linux there is no equivalent script; add a cron entry instead:
 
 ```
+# cron cannot express 90 seconds; its floor is one minute. Use */2 for the
+# proven-safe interval, or a systemd timer if you want 90s exactly.
 */2 * * * * cd /path/to/apple-iPhone-stock-watcher && /usr/bin/python3 -m applewatch
 ```
 
@@ -565,7 +567,7 @@ covered in [step 8](#step-8-start-the-local-watcher-the-important-one):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1
-# defaults to every 2 minutes; see the incident note below before lowering it
+# defaults to every 90 seconds; see the incident note below before lowering it
 ```
 
 Useful afterwards:
@@ -610,11 +612,24 @@ often and succeeding every time, and it does so while generating false
 "broken checker" alerts that train you to ignore the real ones. The
 interval went back to 2 minutes and the failures stopped.
 
+The current setting is **90 seconds**, a deliberate probe of the middle
+ground: roughly 960 requests a day, against 720 at 120s and the 1,440 that
+drew rate limiting. Task Scheduler does honour sub-minute precision, storing
+it as `PT1M30S`. Whether 90 is safe is genuinely unknown, which is why the
+failure-rate check below matters.
+
 Two changes came out of that incident:
 
-- **The interval floor is 2 minutes**, documented in
-  `scripts/register_local_task.ps1`. Lower it only while watching the
-  failure rate in `%TEMP%pplewatch-local.log`.
+- **The interval is now treated as an empirical setting, not a preference.**
+  `scripts/register_local_task.ps1` takes `-IntervalSeconds` and refuses
+  anything under 60. After any change, watch the failure rate:
+
+  ```powershell
+  $log = Get-Content "$env:TEMPpplewatch-local.log" | Where-Object { $_ -match 'check exit' }
+  "{0} polls, {1} failed" -f $log.Count, ($log | Where-Object { $_ -match 'exit=1' }).Count
+  ```
+
+  Anything above zero over a few hundred polls means go back to 120.
 - **Retry backoff widened from (2, 8) seconds to (15, 45).** All three
   attempts had been landing inside the same rate-limit window, roughly ten
   seconds wide, while the next scheduled poll 48 seconds later succeeded.

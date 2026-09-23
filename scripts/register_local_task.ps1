@@ -15,20 +15,27 @@
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1
-    powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1 -IntervalMinutes 2
+    powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1 -IntervalSeconds 120
 #>
 
 param(
-    # Defaults to 2 minutes, which is an empirical limit rather than a guess.
+    # Seconds between polls. Task Scheduler's floor is 60 and it does honour
+    # sub-minute precision (90 is stored as PT1M30S, verified), so this is
+    # expressed in seconds rather than minutes.
     #
-    # 1-minute polling was tried on 2026-09-23 and Apple began returning
-    # HTTP 541 on roughly 5% of requests within 40 minutes. Measured over
-    # the same log: 836 polls at 2 minutes produced zero failures, 40 polls
-    # at 1 minute produced two. A failed poll is a blind poll, so the faster
-    # interval bought less effective coverage, not more.
+    # The safe range is narrow and was established empirically. On
+    # 2026-09-23, 60-second polling made Apple return HTTP 541 on roughly 5%
+    # of requests within 40 minutes, while 120 seconds ran 836 polls with
+    # zero failures. A failed poll is a blind poll, so polling too fast
+    # costs coverage rather than buying it.
     #
-    # Do not lower this without watching the failure rate in the log.
-    [int]$IntervalMinutes = 2,
+    # 90 is the current default: a deliberate probe of the middle ground,
+    # about 960 requests a day against 720 at 120s and 1440 at 60s.
+    #
+    # WATCH THE FAILURE RATE after any change. Anything above zero over a
+    # few hundred polls means go back to 120.
+    [ValidateRange(60, 3600)]
+    [int]$IntervalSeconds = 90,
     [string]$TaskName = 'AppleStockWatcher'
 )
 
@@ -43,7 +50,7 @@ $action = New-ScheduledTaskAction `
 
 # Repeat indefinitely, starting a minute from now so the first run is prompt.
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
-    -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes)
+    -RepetitionInterval (New-TimeSpan -Seconds $IntervalSeconds)
 
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
@@ -64,7 +71,7 @@ Register-ScheduledTask `
     -Principal $principal `
     -Description 'Polls Apple UAE for watched iPhone stock and pushes an ntfy alert. Fast lane complementing the GitHub Actions cron.' | Out-Null
 
-Write-Host "Registered '$TaskName', every $IntervalMinutes minute(s) while logged on."
+Write-Host "Registered '$TaskName', every $IntervalSeconds second(s) while logged on."
 Write-Host "Log: $env:TEMP\applewatch-local.log"
 Write-Host "Run now:  Start-ScheduledTask -TaskName $TaskName"
 Write-Host "Stop it:  Unregister-ScheduledTask -TaskName $TaskName -Confirm:`$false"
