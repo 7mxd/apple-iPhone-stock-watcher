@@ -1,9 +1,9 @@
 {
   "MJX94AH/A|R595": {
-    "last_notified": null,
-    "quote": "Currently unavailable",
-    "since": "2026-09-22T12:33:19.315029+04:00",
-    "status": "miss"
+    "last_notified": "2026-09-23T10:59:47.695347+04:00",
+    "quote": "Available Today",
+    "since": "2026-09-23T10:59:47.695347+04:00",
+    "status": "hit"
   },
   "MJX94AH/A|R706": {
     "last_notified": null,
@@ -12,10 +12,10 @@
     "status": "miss"
   },
   "MJXA4AH/A|R595": {
-    "last_notified": null,
-    "quote": "Currently unavailable",
-    "since": "2026-09-22T16:08:18.987215+04:00",
-    "status": "miss"
+    "last_notified": "2026-09-23T10:59:47.695347+04:00",
+    "quote": "Available Today",
+    "since": "2026-09-23T10:59:47.695347+04:00",
+    "status": "hit"
   },
   "MJXA4AH/A|R706": {
     "last_notified": null,
@@ -24,10 +24,10 @@
     "status": "miss"
   },
   "MJXC4AH/A|R595": {
-    "last_notified": null,
-    "quote": "Currently unavailable",
-    "since": "2026-09-22T15:58:18.693835+04:00",
-    "status": "miss"
+    "last_notified": "2026-09-23T10:59:47.695347+04:00",
+    "quote": "Available Today",
+    "since": "2026-09-23T10:59:47.695347+04:00",
+    "status": "hit"
   },
   "MJXC4AH/A|R706": {
     "last_notified": null,
@@ -36,10 +36,10 @@
     "status": "miss"
   },
   "MJXD4AH/A|R595": {
-    "last_notified": null,
-    "quote": "Currently unavailable",
-    "since": "2026-09-22T16:58:19.087660+04:00",
-    "status": "miss"
+    "last_notified": "2026-09-23T10:59:47.695347+04:00",
+    "quote": "Available Today",
+    "since": "2026-09-23T10:59:47.695347+04:00",
+    "status": "hit"
   },
   "MJXD4AH/A|R706": {
     "last_notified": null,
