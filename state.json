@@ -48,7 +48,6 @@
     "status": "miss"
   },
   "_health": {
-    "last_error": "rate limited (541), not retried: 541 Server Error: Unknown for url: https://www.apple.com/ae/shop/retail/pickup-message?pl=true&mts.0=regular&location=Abu+Dhabi&parts.0=MJX94AH%2FA&parts.1=MJXA4AH%2FA&parts.2=MJXC4AH%2FA&parts.3=MJXD4AH%2FA",
     "last_error_notified": "2026-09-23T21:58:27.360721+04:00"
   },
   "_heartbeat": "2026-09-24T00:01:30.885542+04:00"
