@@ -11,7 +11,7 @@ from there by hand.
 
 It runs in two places at once, on purpose:
 
-- **A local scheduled task, every 2 minutes.** This is the one that
+- **A local scheduled task, every minute.** This is the one that
   actually catches things. See [Polling cadence](#polling-cadence-why-the-local-runner-is-the-primary-one).
 - **A GitHub Actions cron, as a safety net** for when your machine is off.
 
@@ -39,6 +39,51 @@ same finish lasted 5 minutes at one store and 105 minutes at another on the
 same afternoon. And the `Gone` and `Still in stock` messages are not noise,
 they are how you tell "I missed it" from "it is still sitting there",
 without opening Apple's site to check.
+
+### How short are the windows, really?
+
+Short enough that the polling interval is the whole ballgame. Every
+in-stock window this watcher observed on 2026-09-23, measured from the
+`IN STOCK` alert to the matching `Gone` alert:
+
+| Time | Store | Finish | Window |
+|---|---|---|---|
+| 06:19 | Al Maryah Island | Silver | 54 min |
+| 10:59 | Yas Mall | **Burgundy** | **4 min** |
+| 10:59 | Yas Mall | Glacier | 16 min |
+| 10:59 | Yas Mall | Black | 16 min |
+| 10:59 | Yas Mall | Silver | 22 min |
+| 12:01 | Al Maryah Island | **Burgundy** | **2 min** |
+| 12:01 | Al Maryah Island | Glacier | 6 min |
+| 12:01 | Al Maryah Island | Silver | 8 min |
+| 12:01 | Al Maryah Island | Black | 14 min |
+| 14:47 | Al Maryah Island | Glacier | 4 min |
+| 14:47 | Al Maryah Island | Silver | 10 min |
+| 15:55 | Al Maryah Island | **Burgundy** | **2 min** |
+| 19:47 | Al Maryah Island | Glacier | 2 min |
+
+Three things fall out of that table, and all three shaped this project.
+
+**Stock arrives in batches, not a trickle.** At 10:59:51 all four finishes
+appeared at Yas Mall in the same poll; at 12:01:53 the same thing happened
+at Al Maryah Island. Apple appears to release a store's allocation in one
+go, so an alert for one finish usually means the others are there too.
+
+**The finish you want is the one that vanishes first.** Burgundy sold out
+in 2 to 4 minutes every single time, while black took 14 to 16 minutes in
+the same batches. Sizing the polling interval for the *average* window
+would be sizing it for a phone nobody is competing for. It has to be sized
+for the contended one.
+
+**Restocks are spread across the whole day**: 06:19, 10:59, 12:01, 14:47,
+15:55 and 19:47. There is no "check in the morning" shortcut, which is the
+argument for automating this rather than refreshing by hand.
+
+This is why the local poller runs every minute, and why the GitHub Actions
+cron at three to four hours is a backstop rather than the mechanism. It is
+also why detection stops being the bottleneck: against a 2-minute window
+the useful question is no longer whether you will be told, but whether you
+can check out before it closes.
 
 ## Setup, step by step
 
@@ -161,15 +206,14 @@ typo raises a clear error rather than silently watching nothing.
 
 ### Step 8: Start the local watcher (the important one)
 
-This is what polls every couple of minutes and what will actually catch a
-restock.
+This is what polls every minute and what will actually catch a restock.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\register_local_task.ps1
 ```
 
 That registers a Windows scheduled task named `AppleStockWatcher`, polling
-every two minutes. Confirm it is alive:
+every minute. Confirm it is alive:
 
 ```powershell
 Get-ScheduledTaskInfo -TaskName AppleStockWatcher
@@ -180,7 +224,7 @@ Get-ScheduledTaskInfo -TaskName AppleStockWatcher
 On macOS or Linux there is no equivalent script; add a cron entry instead:
 
 ```
-*/2 * * * * cd /path/to/apple-iPhone-stock-watcher && /usr/bin/python3 -m applewatch
+* * * * * cd /path/to/apple-iPhone-stock-watcher && /usr/bin/python3 -m applewatch
 ```
 
 ### Step 9 (optional): The cloud safety net
@@ -551,6 +595,7 @@ backstops.
 | No alerts ever arrive, even when you know stock changed | iOS Focus is silencing ntfy | Check the Time Sensitive and sleep-Focus allowlist steps above, then confirm the pipe still works with `python -m applewatch --force-notify` (sends one real alert for the first watched pair and exits). |
 | Run refuses to start with `config error:` followed by `unknown color [...]` (or `model`/`store`/`city`/`emirate`/`priority`) | Typo in `watches.yml` | Every valid value is enumerated in the field table above; compare byte-for-byte, including case. |
 | `apple request failed: Apple did not report N of M watched pair(s)...` and exit code `1` | Apple rotated one or more part numbers, or otherwise stopped reporting a watched pair. Any missing pair, partial or total, is what a rotated part number or a broken response shape looks like, not what "nobody has stock" looks like, so this is always treated as a broken checker, never as a quiet, permanent absence of stock | Run `python scripts/refresh_catalog.py` to regenerate `catalog.json`, `git diff catalog.json` to see what changed, then `--dry-run` to confirm the watch resolves to the new SKU. Note that state keys are part-number based, so if a pair was already in stock under the old part number, it will re-alert once after the rotation: the new part number starts with no history of its own. |
+| The local task shows `LastTaskResult: 267009` | Not an error: that code is `SCHED_S_TASK_RUNNING`, meaning the task happened to be mid-poll when you asked. At a 1-minute interval you will hit this fairly often | Query it again a few seconds later. A poll takes about a second, so anything still showing 267009 after a minute is worth looking at in the log |
 | The local task shows `LastTaskResult: 267011` | Not an error: that code means "the task has not run yet". It is normal immediately after registering or re-registering the task | Wait for `NextRunTime`, or force one now with `Start-ScheduledTask -TaskName AppleStockWatcher`. Anything other than `0` after a genuine run is worth investigating |
 | No alerts, and the local task looks fine, but the log says `SKIP: NTFY_TOPIC is not set` | The scheduled task runs as your user and reads `NTFY_TOPIC` from your **user** environment. Setting it only in a terminal session, or only as a GitHub secret, is not enough | `setx NTFY_TOPIC "<your-topic>"`, then re-register the task so it picks up the new environment. Confirm with `Get-Content "$env:TEMPpplewatch-local.log" -Tail 5` |
 | The local task silently stops polling overnight | It is registered to run only while you are logged on, and a sleeping or logged-out machine has no session. This is deliberate: running otherwise would mean storing your account password with the task | Nothing to fix locally. This is precisely the gap the GitHub Actions cron exists to cover, slowly. If you need fast overnight coverage, keep the machine awake rather than weakening the task's security |
