@@ -17,6 +17,7 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 )
 MAX_ATTEMPTS = 3
+RATE_LIMIT_STATUS = 541
 
 # Backoff between attempts, in seconds.
 #
@@ -34,6 +35,18 @@ BACKOFF_SECONDS = (15, 45)
 
 class AppleError(Exception):
     """Raised when Apple's response cannot be trusted or parsed."""
+
+
+
+def _is_rate_limited(error: Exception) -> bool:
+    """True for Apple's 541, which it returns when polled too often.
+
+    541 is not a documented status. It was observed live on 2026-09-23 as
+    the response to sustained sub-2-minute polling, and a single request
+    minutes later succeeded, so it is a throttle rather than an outage.
+    """
+    response = getattr(error, "response", None)
+    return getattr(response, "status_code", None) == RATE_LIMIT_STATUS
 
 
 def build_params(part_numbers: Sequence[str], location: str) -> dict[str, str]:
@@ -106,6 +119,15 @@ def fetch_availability(
             return parse_pickup_response(response.json())
         except (requests.RequestException, ValueError, AppleError) as error:
             last_error = error
+            if _is_rate_limited(error):
+                # 541 means "you are asking too often". Retrying is the one
+                # response guaranteed to make it worse, and it triples the
+                # request cost of exactly the polls that are already over
+                # budget: at 120s with a 20% failure rate, retries push ~30
+                # requests an hour up to ~42, which is enough on its own to
+                # keep the limiter engaged. Fail fast and let the next
+                # scheduled poll try, by which point the window has moved.
+                raise AppleError(f"rate limited (541), not retried: {error}") from None
             if attempt < len(BACKOFF_SECONDS):
                 time.sleep(BACKOFF_SECONDS[attempt])
 

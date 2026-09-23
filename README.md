@@ -626,6 +626,23 @@ The cliff between 90 and 120 seconds is steep and was not predictable from
 first principles. Treat 120 as a measured floor rather than a cautious
 guess, and re-measure rather than reason if you change it.
 
+### Retrying a rate limit makes it worse
+
+A failing poll originally made three requests. That tripled the cost of
+exactly the polls already over budget: at 120s with a 20% failure rate,
+~30 requests an hour became ~42, which was enough on its own to keep the
+limiter engaged. The system was sustaining its own rate limiting.
+
+`541` is now treated as "asking too often" and is **not retried**. Other
+failures (timeouts, connection resets, 5xx) still retry, because those are
+genuinely transient. Covered by two tests, one asserting a single request
+for 541 and one asserting three for 503.
+
+If you ever find yourself rate limited, back off to 300 seconds for an hour
+or so before returning to 120. A single request succeeds during the penalty
+window, so the limiter is budget-based rather than a hard block, and it
+needs time rather than a different request shape.
+
 ### The bug that 90 seconds exposed
 
 Intermittent failures produced **four "checker is broken" alerts in

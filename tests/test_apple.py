@@ -200,3 +200,53 @@ def test_fetch_availability_raises_on_bad_status_after_retries(monkeypatch):
 
     assert call_count == 3  # MAX_ATTEMPTS
     assert "failed after 3 attempts" in str(exc_info.value)
+
+
+def _http_error(status: int) -> requests.HTTPError:
+    """An HTTPError carrying a real response, as raise_for_status produces."""
+    response = requests.Response()
+    response.status_code = status
+    return requests.HTTPError(f"{status} Server Error", response=response)
+
+
+class _CountingSession:
+    def __init__(self, status):
+        self.status = status
+        self.calls = 0
+
+    def get(self, *args, **kwargs):
+        self.calls += 1
+        outer = self
+
+        class _R:
+            def raise_for_status(self):
+                raise _http_error(outer.status)
+
+        return _R()
+
+
+def test_rate_limit_541_is_not_retried(monkeypatch):
+    """Retrying a 541 triples the cost of the polls already over budget.
+
+    Observed live on 2026-09-23: three retries per failing poll pushed the
+    hourly request count from ~30 to ~42 and kept Apple's limiter engaged.
+    """
+    monkeypatch.setattr("applewatch.apple.time.sleep", lambda s: None)
+    session = _CountingSession(541)
+
+    with pytest.raises(AppleError) as exc:
+        fetch_availability(["MJXC4AH/A"], "Abu Dhabi", session=session)
+
+    assert session.calls == 1, f"541 must not be retried, made {session.calls} requests"
+    assert "541" in str(exc.value)
+
+
+def test_non_rate_limit_errors_are_still_retried(monkeypatch):
+    """Fail-fast must be specific to 541, not a blanket change."""
+    monkeypatch.setattr("applewatch.apple.time.sleep", lambda s: None)
+    session = _CountingSession(503)
+
+    with pytest.raises(AppleError):
+        fetch_availability(["MJXC4AH/A"], "Abu Dhabi", session=session)
+
+    assert session.calls == 3, f"503 should retry 3 times, made {session.calls}"
