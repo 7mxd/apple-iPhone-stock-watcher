@@ -36,10 +36,10 @@
     "status": "miss"
   },
   "MJXD4AH/A|R595": {
-    "last_notified": "2026-09-24T08:21:58.525691+04:00",
-    "quote": "Available Today",
-    "since": "2026-09-24T08:21:58.525691+04:00",
-    "status": "hit"
+    "last_notified": null,
+    "quote": "Currently unavailable",
+    "since": "2026-09-24T08:47:59.569434+04:00",
+    "status": "miss"
   },
   "MJXD4AH/A|R706": {
     "last_notified": null,
